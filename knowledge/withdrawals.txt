@@ -1,0 +1,13 @@
+MAGICARD — WITHDRAWALS
+
+Customers can withdraw funds from their Magicard USD wallet as USDT using the TRC20 network.
+
+The customer provides a valid TRC20 wallet address and the withdrawal amount.
+
+A withdrawal request may require approval before the USDT is sent.
+
+Customers should carefully verify their destination wallet address before confirming a withdrawal.
+
+Blockchain transactions cannot normally be reversed after they are sent.
+
+If a withdrawal remains pending or fails, the customer should contact Magicard support.

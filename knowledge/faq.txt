@@ -1,0 +1,13 @@
+MAGICARD — GENERAL FAQ
+
+Q: What is Magicard?
+A: Magicard is a service that allows customers to manage a USD wallet, deposit USDT, create virtual Mastercard cards, and use those cards for online payments.
+
+Q: What currency does my Magicard wallet use?
+A: The Magicard wallet uses USD.
+
+Q: What can I do with Magicard?
+A: You can deposit USDT, maintain a USD wallet balance, create virtual cards, fund your cards, spend online, withdraw unused card funds back to your wallet, and withdraw wallet funds as USDT.
+
+Q: Where can I get help if the chatbot cannot answer my question?
+A: Please contact Magicard customer support.

@@ -1,0 +1,13 @@
+MAGICARD — KYC
+
+Magicard may require customers to complete identity verification (KYC).
+
+Customers must provide accurate personal information when completing verification.
+
+The required information or documents depend on the Magicard verification process presented to the customer.
+
+Submitted information must belong to the customer completing the verification.
+
+Customers should not send identity documents through the chatbot.
+
+If KYC verification fails or remains pending, the customer should contact Magicard support.

@@ -1,0 +1,19 @@
+MAGICARD — VIRTUAL CARDS
+
+Magicard allows customers to create virtual Mastercard cards.
+
+Virtual cards are funded using the customer's Magicard USD wallet balance.
+
+Customers must have sufficient wallet balance to cover the card funding amount and any applicable fees.
+
+Customers can add funds to an existing supported virtual card.
+
+Unused card balance can be withdrawn from the card back to the customer's Magicard wallet.
+
+Cards can be used for supported online purchases.
+
+Some merchants may decline virtual or prepaid cards according to their own policies.
+
+Card details such as the card number, expiry date, and CVV are sensitive information and should never be shared with another person.
+
+If a card transaction is unexpectedly declined, the customer should verify their card status and available balance before contacting Magicard support.

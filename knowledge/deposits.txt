@@ -1,0 +1,15 @@
+MAGICARD — USDT DEPOSITS
+
+Magicard supports USDT deposits using the TRC20 network.
+
+Customers receive a deposit address for sending USDT.
+
+The customer sends USDT to the provided deposit address using the TRC20 network.
+
+After the transaction is confirmed, the deposit is credited to the customer's Magicard USD wallet.
+
+Customers should always verify the network and deposit address before sending cryptocurrency.
+
+Do not send funds using an unsupported network.
+
+If a deposit has not appeared after confirmation, the customer should contact Magicard support and provide the transaction hash.

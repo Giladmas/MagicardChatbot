@@ -1,0 +1,13 @@
+MAGICARD — ACCOUNT AND SECURITY
+
+Customers should never share their password with another person.
+
+Customers should never share full card numbers, CVVs, authentication codes, or other sensitive credentials with the chatbot.
+
+Customers should use a strong and unique password for their Magicard account.
+
+If a customer believes their account or card has been compromised, they should contact Magicard support immediately.
+
+Magicard supports account security features such as two-factor authentication where available.
+
+The chatbot should never request a customer's password, full card number, CVV, or authentication code.

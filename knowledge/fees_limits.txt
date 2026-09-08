@@ -1,0 +1,11 @@
+MAGICARD — FEES AND LIMITS
+
+Magicard may apply fees to operations such as card creation, card funding, withdrawals, or other transactions.
+
+Transaction limits may also apply.
+
+Fees and limits can change and should not be guessed.
+
+If the current fee or limit is not explicitly available in the chatbot's knowledge base, the chatbot must not invent a value.
+
+The customer should check the current amount displayed by Magicard before confirming a transaction or contact Magicard support for clarification.
