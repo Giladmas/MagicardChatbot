@@ -123,7 +123,7 @@ Some values are meant to be tuned without a redeploy:
 | `missed_questions_rotate_at` | 200 | Once `logs/missed_questions.jsonl` reaches this many lines, it's archived and a fresh file starts (see **Missed questions**, below). |
 
 These live in `runtime_config.json` at the project root (auto-created with defaults from `app/runtime_config.py` on first read; gitignored since it's runtime state, not source).
-
+#check
 Change them live via the admin panel below, or by editing/creating `runtime_config.json` directly and restarting the server (defaults are only used for keys the file doesn't have — a hand-edited partial file is fine).
 
 **Caveat:** this is a single JSON file with an in-process lock — fine for one `uvicorn` worker, but if this ever runs with multiple worker processes, writes from the admin panel won't propagate to the other workers until they happen to reread the file. Same caveat applies to rate limiting, which is a plain in-memory dict per process.
