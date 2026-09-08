@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     qdrant_collection: str = "magicard_knowledge"
 
     chat_shared_secret: str = ""
+    admin_username: str = "admin"
+    admin_password: str = ""
 
 
 settings = Settings()

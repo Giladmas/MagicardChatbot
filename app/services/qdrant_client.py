@@ -1,5 +1,5 @@
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
+from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 
 from app.config import settings
 
@@ -20,9 +20,13 @@ def get_qdrant_client() -> QdrantClient:
 
 def ensure_collection() -> None:
     client = get_qdrant_client()
-    if client.collection_exists(settings.qdrant_collection):
-        return
-    client.create_collection(
+    if not client.collection_exists(settings.qdrant_collection):
+        client.create_collection(
+            collection_name=settings.qdrant_collection,
+            vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
+        )
+    client.create_payload_index(
         collection_name=settings.qdrant_collection,
-        vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
+        field_name="source",
+        field_schema=PayloadSchemaType.KEYWORD,
     )
