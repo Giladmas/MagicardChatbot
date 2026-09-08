@@ -2,6 +2,20 @@
 
 RAG-based support chatbot for Magicard. FastAPI + Qdrant + OpenAI, called by Laravel over HTTP.
 
+## Current status
+
+What's built and working today:
+
+- **Knowledge ingestion** — `knowledge/*.txt` → chunk → embed → upsert into Qdrant Cloud. Idempotent, safe to re-run.
+- **Retrieval** — Qdrant vector search for the top-k most relevant chunks per question.
+- **Generation** — GPT answers using only retrieved context; refuses (fixed string) when nothing relevant is found.
+- **`POST /chat`** — validated (question length, required headers), rate-limited per user, graceful fallback answer if OpenAI/Qdrant fail (never a raw 500).
+- **`GET /admin`** — Basic-auth protected page to view/edit live config and review missed questions, no redeploy needed.
+- **Missed-question logging** — every refused question saved with an Israel-time timestamp, auto-rotated once the log grows past a threshold.
+- **Tests** — offline (`test_api.py`, mocks OpenAI/Qdrant) and live (`test_retrieval.py`, `test_chat.py`) eval scripts.
+
+Not yet built: nothing outstanding from the original scope — remaining work is deployment (where this actually runs in production, see the Cloudways discussion) and any product decisions (multi-turn conversation memory, etc.) beyond what's listed above.
+
 ## How it works
 
 1. **`knowledge/*.txt`** — the source of truth. Q&A-style files use `Q:`/`A:` lines; other files are plain paragraphs (one blank-line-separated statement per idea).
