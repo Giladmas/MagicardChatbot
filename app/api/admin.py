@@ -1036,16 +1036,6 @@ def _render_page(
       <button type="submit" class="btn btn-outline-danger">Clear all conversation history</button>
     </form>
   </div>
-  <div class="danger-zone">
-    <div class="label">Answer cache</div>
-    <p class="subtitle" style="margin: 0 0 0.6rem 0;">
-      Wipes every cached answer. The next matching question will be answered fresh (slightly
-      slower, normal cost) and re-cached.
-    </p>
-    <form method="post" action="/admin/cache/clear">
-      <button type="submit" class="btn btn-outline-danger">Clear entire cache</button>
-    </form>
-  </div>
 </div>
 
 </div>
