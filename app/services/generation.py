@@ -1,5 +1,6 @@
 from app.config import settings
 from app.runtime_config import DEFAULTS
+from app.services.conversation_history import Turn
 from app.services.embeddings import get_openai_client
 from app.services.retrieval import RetrievedChunk
 
@@ -24,18 +25,22 @@ def _build_context(chunks: list[RetrievedChunk]) -> str:
 def generate_answer(
     question: str,
     chunks: list[RetrievedChunk],
+    history: list[Turn] | None = None,
     max_tokens: int = DEFAULTS["max_answer_tokens"],
     temperature: float = DEFAULTS["temperature"],
 ) -> str:
     context = _build_context(chunks)
     user_message = f"Context:\n{context}\n\nQuestion: {question}"
 
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for turn in history or []:
+        messages.append({"role": "user", "content": turn.question})
+        messages.append({"role": "assistant", "content": turn.answer})
+    messages.append({"role": "user", "content": user_message})
+
     response = get_openai_client().chat.completions.create(
         model=settings.openai_chat_model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
+        messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
     )

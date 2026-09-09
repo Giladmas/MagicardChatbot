@@ -30,3 +30,13 @@ def ensure_collection() -> None:
         field_name="source",
         field_schema=PayloadSchemaType.KEYWORD,
     )
+
+
+def ensure_named_collection(collection_name: str) -> None:
+    """Creates a plain COSINE collection with no payload index, for non-knowledge uses (e.g. the answer cache)."""
+    client = get_qdrant_client()
+    if not client.collection_exists(collection_name):
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
+        )

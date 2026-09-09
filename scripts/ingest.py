@@ -15,6 +15,7 @@ import uuid
 from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
 from app.knowledge_processing.chunker import chunk_all
+from app.services.answer_cache import clear_cache
 from app.services.embeddings import embed_texts
 from app.services.qdrant_client import ensure_collection, get_qdrant_client
 from app.config import settings
@@ -72,6 +73,9 @@ def main() -> None:
 
     for source, keep_ids in ids_by_source.items():
         prune_stale_points(source, keep_ids)
+
+    clear_cache()
+    print("Cleared answer cache (stale after a knowledge update).")
 
     print("Ingestion complete.")
 
