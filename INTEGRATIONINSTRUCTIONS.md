@@ -70,11 +70,20 @@ or "10 seconds" anywhere in Laravel; if you want to display them, consider expos
 config rather than assuming they never change (there's currently no `/chat` endpoint that reports the
 live limits back — ask if you need one, it'd be a small addition).
 
-**No conversation memory.** Each `/chat` call is independent — the API doesn't remember prior messages
-in a thread. If you want multi-turn context (e.g. "what about for businesses?" referring to the
-previous answer), Laravel currently has to build and send that context itself (e.g. prepend prior
-Q&A into `question`), since the chatbot API has no concept of a conversation id today. This is a real
-product gap worth flagging if multi-turn chat is expected.
+**Conversation memory now exists — no Laravel changes needed.** The chatbot keeps a rolling
+conversation per `X-User-Id` server-side (in memory), so a follow-up like "what about for businesses?"
+is automatically understood in context of the prior question/answer — Laravel does **not** need to
+prepend history into `question` itself; just keep sending the same `X-User-Id` for the same user across
+their session, exactly as already required for rate limiting. A conversation resets automatically after
+~30 minutes of inactivity for that user (live-configurable server-side), so a returning user later just
+starts fresh rather than dragging in stale context. This is transparent to the request/response
+contract above — nothing changes shape, answers may just be more contextually aware.
+
+**Semantic answer cache — also transparent to Laravel.** Repeated or near-identical standalone
+questions (e.g. many different users asking "What is KYC?") may be served from a cache instead of
+re-running the full AI pipeline — same request/response shape, just potentially faster. No action
+needed on Laravel's side; mentioned here only so a "why was that answer instant" question has an
+answer.
 
 ## 3. Possible outputs — what your UI needs to handle
 
@@ -140,19 +149,30 @@ MAGICARD_CHATBOT_SECRET=   # only if the chatbot's CHAT_SHARED_SECRET is set —
 
 - **Health check**: `GET /health` → `{"status": "ok"}`, no auth required. Point your load balancer /
   uptime monitor at this, not `/chat` (which requires headers and would burn rate-limit/API quota).
-- **Single-worker assumption**: rate limiting and the live-editable config are both in-memory/single-file
-  and **not safe across multiple `uvicorn` worker processes** — if the chatbot is ever scaled to
-  multiple workers or instances, a user's rate limit could reset unexpectedly (each worker tracks its
-  own state) and admin config edits may not propagate to all workers immediately. This is documented
-  and known; ask before assuming rate limiting is perfectly enforced under horizontal scaling.
+- **Single-worker assumption**: rate limiting, conversation memory, and the live-editable config are
+  all in-memory/single-file and **not safe across multiple `uvicorn` worker processes** — if the
+  chatbot is ever scaled to multiple workers or instances, a user's rate limit or conversation context
+  could reset unexpectedly (each worker tracks its own state) and admin config edits may not propagate
+  to all workers immediately. This is documented and known; ask before assuming these are perfectly
+  enforced under horizontal scaling. The semantic answer cache and the saved conversation log are the
+  exceptions — they live in Qdrant / a shared file respectively, so they're consistent across workers.
 - **Startup requires API keys**: the chatbot server refuses to start if `OPENAI_API_KEY` is unset, or
   if `QDRANT_API_KEY` is unset while `QDRANT_URL` doesn't look like a local instance — so if the
   chatbot service is down, check its own logs/env first before assuming it's a Laravel-side problem.
-- **Admin panel** (`GET /admin`, HTTP Basic auth) lets ops tune rate limits, question length, retrieval
-  breadth, etc. live, and shows the log of questions the bot couldn't answer — worth bookmarking for
-  whoever owns the Magicard knowledge base, not something Laravel needs to integrate with, but good to
-  know it exists so "the bot won't answer X" reports have a clear next step (add it to `knowledge/`,
-  ask the chatbot's maintainer to re-ingest).
+- **Admin panel** (`GET /admin`, HTTP Basic auth) is a full operator dashboard — not something Laravel
+  integrates with, but worth bookmarking for whoever owns the Magicard knowledge base or needs to
+  investigate a chat issue. It has:
+  - Every live-tunable setting (rate limits, question length, retrieval breadth, conversation memory
+    limits, cache threshold, etc.), editable with no redeploy.
+  - **Knowledge Gaps** — questions the bot couldn't answer, so "the bot won't answer X" reports have a
+    clear next step (add it to `knowledge/`, ask the maintainer to re-ingest).
+  - **Cached Answers** and **Conversations** — browsable records of cached answers and real chat
+    exchanges (searchable by `X-User-Id` — handy if Laravel reports "user X got a weird answer" and
+    someone needs to see that user's actual thread).
+  - A built-in **Test Chatbot** widget to manually try `/chat` (with custom headers) without needing
+    Postman — useful for reproducing a reported issue quickly.
+  - One-click resets to clear conversation memory or the answer cache fleet-wide, e.g. right after a
+    knowledge update.
 - **No streaming.** `/chat` returns the full answer in one response — there's no token-by-token
   streaming endpoint today. If a "typing" / streaming UI is wanted, that would be a chatbot-side
   addition (Server-Sent Events or chunked response), not something Laravel can get around on its own.
