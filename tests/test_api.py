@@ -6,6 +6,7 @@ safe to run anytime, no live services or API keys required.
 
 from __future__ import annotations
 
+import re
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -72,6 +73,10 @@ def main() -> None:
                 # --- rate limit: same user again immediately ---
                 r = client.post("/chat", json={"question": "another one"}, headers={"X-User-Id": "u2"})
                 check("second request same user -> 429", r.status_code == 429)
+                detail = r.json().get("detail", "")
+                match = re.search(r"(\d+) second", detail)
+                check("429 wait time is a whole number", bool(match))
+                check("429 message mentions seconds", "second" in detail)
 
                 # different user is unaffected
                 r = client.post("/chat", json={"question": "hello"}, headers={"X-User-Id": "u3"})
@@ -121,6 +126,16 @@ def main() -> None:
             from app.runtime_config import get_config
 
             check("config value updated", get_config()["max_question_words"] == 15)
+
+            # --- admin config: malformed value should not crash the server ---
+            r = client.post(
+                "/admin/config",
+                data={"max_question_words": "not-a-number"},
+                auth=("admin", "test-pass"),
+            )
+            check("admin config bad value -> 200 (no crash)", r.status_code == 200)
+            check("admin page shows validation error", "Error:" in r.text)
+            check("bad value did not overwrite config", get_config()["max_question_words"] == 15)
 
     print(f"\n{'ALL PASSED' if failures == 0 else f'{failures} FAILED'}")
 

@@ -18,3 +18,23 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def validate_required_settings(s: Settings = settings) -> list[str]:
+    """Returns human-readable problems with the current settings, empty if none.
+
+    Checked at server startup (see app/main.py) so a missing key fails fast
+    with a clear message instead of surfacing later as an OpenAI/Qdrant error
+    on the first real request.
+    """
+    problems = []
+    if not s.openai_api_key:
+        problems.append("OPENAI_API_KEY is not set (required for chat completions and embeddings).")
+
+    is_local_qdrant = "localhost" in s.qdrant_url or "127.0.0.1" in s.qdrant_url
+    if not s.qdrant_api_key and not is_local_qdrant:
+        problems.append(
+            f"QDRANT_API_KEY is not set, but QDRANT_URL ({s.qdrant_url!r}) doesn't look like a "
+            "local instance. Qdrant Cloud requires an API key."
+        )
+    return problems

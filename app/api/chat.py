@@ -1,5 +1,6 @@
 import logging
 
+import openai
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
@@ -49,18 +50,30 @@ def chat(
 
     wait_seconds = check_rate_limit(x_user_id, cfg["rate_limit_seconds"])
     if wait_seconds is not None:
-        raise HTTPException(status_code=429, detail=f"Too many requests, try again in {wait_seconds}s")
+        unit = "second" if wait_seconds == 1 else "seconds"
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many requests. Try again in {wait_seconds} {unit}.",
+        )
 
     try:
         chunks = retrieve(question, top_k=cfg["retrieval_top_k"])
+    except Exception:
+        logger.exception("retrieval failed for question=%r", question)
+        return ChatResponse(answer=FALLBACK_ERROR, sources=[])
+
+    try:
         answer = generate_answer(
             question,
             chunks,
             max_tokens=cfg["max_answer_tokens"],
             temperature=cfg["temperature"],
         )
+    except openai.OpenAIError:
+        logger.exception("OpenAI call failed for question=%r", question)
+        return ChatResponse(answer=FALLBACK_ERROR, sources=[])
     except Exception:
-        logger.exception("chat pipeline failed for question=%r", question)
+        logger.exception("generation failed for question=%r", question)
         return ChatResponse(answer=FALLBACK_ERROR, sources=[])
 
     if answer == REFUSAL:

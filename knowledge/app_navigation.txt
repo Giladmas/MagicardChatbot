@@ -1,0 +1,25 @@
+MAGICARD — APP NAVIGATION GUIDE
+
+ACCOUNT
+The Account section is located at the bottom right of the home screen.
+
+Under Account, customers can access:
+- Account Info
+- Tariffs & Limits
+- Transactions
+- 2FA Security
+- Get Support
+- Language
+- Dark Mode
+- Light Mode
+- Change Password
+- Delete Account
+- Logout
+- Legal & Policies
+
+CARDS
+Card information is located under the Cards icon at the bottom of the home screen.
+
+WALLET
+The Wallet section is located at the bottom left of the home screen.
+Customers can see their latest transactions and Wallet overview in the Wallet section.

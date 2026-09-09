@@ -1,11 +1,38 @@
 MAGICARD — FEES AND LIMITS
 
-Magicard may apply fees to operations such as card creation, card funding, withdrawals, or other transactions.
+CARD CREATION — ONE TIME
+Minimum: $10
+Maximum per transaction: $100,000
+Fee: 3% + $3
 
-Transaction limits may also apply.
+CARD TOP-UP
+Minimum: $1
+Maximum per transaction: $100,000
+Maximum balance: $1,000,000
+Fee: 3% + $3
 
-Fees and limits can change and should not be guessed.
+TRANSFER TO WALLET
+Minimum: $10
+Maximum per transaction: $100,000
+Fee: 0%
 
-If the current fee or limit is not explicitly available in the chatbot's knowledge base, the chatbot must not invent a value.
+WITHDRAWAL — WALLET TO WALLET
+Minimum: $10
+Maximum per transaction: $100,000
+Fee: 1% + $1
 
-The customer should check the current amount displayed by Magicard before confirming a transaction or contact Magicard support for clarification.
+OTHER FEES
+Decline fee: $0
+Conversion fee: $0
+Cross-border fee: $0
+Transaction fee: $0
+Freeze / Unfreeze fee: $0
+Account creation fee: $0
+
+CARD LIMITS
+Maximum active cards: 3
+
+CRYPTO NETWORK FEES
+Crypto network fees are shown at the time of each transaction.
+
+Customers can find Tariffs & Limits under Account, located at the bottom right of the home screen.

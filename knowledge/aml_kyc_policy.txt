@@ -1,0 +1,61 @@
+MAGICARD — AML & KYC POLICY
+
+Last updated: June 10, 2026
+
+Magicard applies Anti-Money-Laundering (AML), Know-Your-Customer (KYC), counter-terrorist-financing (CTF), sanctions, and related compliance controls designed to prevent the Services from being used for financial crime.
+
+The AML & KYC Policy applies to all Users of the Services.
+
+Magicard's controls are designed to deter, detect, and report suspicious activity and to verify the identity of its Users.
+
+Before granting access to certain features, and on an ongoing basis, Magicard may require Users to provide identifying information and documentation.
+
+Required information may include full legal name, date of birth, nationality, residential address, a government-issued identification document, and proof of address.
+
+Magicard verifies information using internal and third-party tools.
+
+Magicard may request additional information or repeat verification at any time.
+
+Customers must provide truthful and accurate information and cooperate with verification requests.
+
+Magicard may apply Enhanced Due Diligence (EDD) when a User, Transaction, or relationship presents a higher risk.
+
+Higher-risk situations may include higher transaction volumes, unusual transaction patterns, or connections to higher-risk jurisdictions.
+
+Enhanced Due Diligence may include requesting source-of-funds or source-of-wealth information.
+
+Magicard may require senior-management approval to continue a higher-risk relationship.
+
+Magicard applies additional scrutiny to Users who are politically exposed persons (PEPs), or who are connected to politically exposed persons, in accordance with applicable requirements.
+
+Magicard monitors activity on a risk-sensitive basis to identify unusual or suspicious patterns.
+
+As part of compliance monitoring, Magicard may apply limits, request explanations, place holds on Transactions, delay Transactions, or decline Transactions.
+
+Magicard may suspend or close Accounts where necessary to meet its compliance obligations.
+
+Magicard screens Users and Transactions against applicable sanctions and watch lists.
+
+Magicard does not provide Services to persons subject to applicable sanctions or persons located in restricted jurisdictions.
+
+Magicard may block or reject Transactions involving sanctioned persons or restricted jurisdictions.
+
+Magicard Services must not be used for money laundering, terrorist financing, fraud, corruption, sanctions evasion, or any other unlawful activity.
+
+Accounts connected to prohibited activity may be frozen or closed and may be reported to relevant authorities.
+
+Where required by law, Magicard reports suspicious activity to competent authorities.
+
+Magicard may be legally prohibited from telling a customer that a suspicious activity report has been or may be made.
+
+Magicard may also be required to take actions such as freezing funds as a result of its legal obligations.
+
+Magicard retains identification, verification, and transaction records for the periods required by applicable law.
+
+By using the Services, Users agree to cooperate with Magicard's verification, monitoring, and compliance requests.
+
+Users must provide truthful and accurate information.
+
+Failure to cooperate with compliance requests may result in limitations, suspension, or closure of an Account.
+
+Attempts to use Magicard for prohibited purposes may result in limitations, suspension, closure of the Account, and, where appropriate, reporting to authorities.

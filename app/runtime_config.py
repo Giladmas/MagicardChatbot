@@ -47,9 +47,15 @@ def get_config() -> dict[str, Any]:
 def update_config(changes: dict[str, Any]) -> dict[str, Any]:
     with _lock:
         current = _load()
+        errors: list[str] = []
         for key, value in changes.items():
             if key not in DEFAULTS:
                 continue
-            current[key] = type(DEFAULTS[key])(value)
+            try:
+                current[key] = type(DEFAULTS[key])(value)
+            except (TypeError, ValueError):
+                errors.append(f"{key!r}: {value!r} is not a valid {type(DEFAULTS[key]).__name__}")
+        if errors:
+            raise ValueError("; ".join(errors))
         CONFIG_PATH.write_text(json.dumps(current, indent=2), encoding="utf-8")
         return current

@@ -22,7 +22,7 @@ def require_admin(credentials: HTTPBasicCredentials = Depends(security)) -> None
         raise HTTPException(status_code=401, detail="Invalid credentials", headers={"WWW-Authenticate": "Basic"})
 
 
-def _render_page(config: dict, misses: list[dict]) -> str:
+def _render_page(config: dict, misses: list[dict], error: str | None = None) -> str:
     rows = "".join(
         f"<tr><td>{html.escape(k)}</td>"
         f"<td><input name='{html.escape(k)}' value='{html.escape(str(config[k]))}'></td></tr>"
@@ -32,6 +32,7 @@ def _render_page(config: dict, misses: list[dict]) -> str:
         f"<tr><td>{html.escape(m['timestamp'])}</td><td>{html.escape(m['question'])}</td></tr>"
         for m in misses
     ) or "<tr><td colspan='2'>No missed questions logged yet.</td></tr>"
+    error_html = f"<p style='color:#b00'>Error: {html.escape(error)}</p>" if error else ""
 
     return f"""
 <!doctype html>
@@ -49,6 +50,7 @@ h2 {{ margin-top: 2rem; }}
 <h1>Magicard Chatbot Admin</h1>
 
 <h2>Live config</h2>
+{error_html}
 <form method="post" action="/admin/config">
 <table>{rows}</table>
 <button type="submit">Save</button>
@@ -72,5 +74,9 @@ def admin_page(_: None = Depends(require_admin)) -> str:
 @router.post("/admin/config", response_class=HTMLResponse)
 async def admin_update_config(request: Request, _: None = Depends(require_admin)) -> str:
     form = await request.form()
-    update_config(dict(form))
-    return _render_page(get_config(), read_misses())
+    error = None
+    try:
+        update_config(dict(form))
+    except ValueError as exc:
+        error = str(exc)
+    return _render_page(get_config(), read_misses(), error=error)
