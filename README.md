@@ -14,8 +14,6 @@ What's built and working today:
 - **Missed-question logging** — every refused question saved with an Israel-time timestamp, auto-rotated once the log grows past a threshold.
 - **Tests** — offline (`test_api.py`, mocks OpenAI/Qdrant) and live (`test_retrieval.py`, `test_chat.py`) eval scripts.
 
-Not yet built: nothing outstanding from the original scope — remaining work is deployment (where this actually runs in production, see the Cloudways discussion) and any product decisions (multi-turn conversation memory, etc.) beyond what's listed above.
-
 ## How it works
 
 1. **`knowledge/*.txt`** — the source of truth. Q&A-style files use `Q:`/`A:` lines; other files are plain paragraphs (one blank-line-separated statement per idea).
