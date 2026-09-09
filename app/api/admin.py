@@ -1,17 +1,23 @@
 import html
+import io
+import json
 import secrets
-from datetime import datetime
+import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from app.config import settings
 from app.runtime_config import CONFIG_HELP, DEFAULTS, get_config, update_config
-from app.services.answer_cache import clear_cache, delete_cached, list_cached
+from app.services.answer_cache import clear_cache, delete_cached, list_cached, list_cached_all
 from app.services.conversation_history import clear_all_history
+from app.services.conversation_log import LOG_DIR as CONVERSATIONS_LOG_DIR
 from app.services.conversation_log import clear_conversations, delete_conversation_entry, read_conversations
+from app.services.miss_log import LOG_DIR as MISSES_LOG_DIR
 from app.services.miss_log import clear_misses, delete_miss, read_misses
 
 router = APIRouter()
@@ -873,12 +879,14 @@ def _render_top_card(
     total: int,
     view_all_url: str,
     clear_action: str,
+    download_url: str | None = None,
 ) -> str:
     footer = f"""
   <div class="actions-row split">
     <span class="subtitle">{'Showing latest ' + str(min(PREVIEW_COUNT, total)) + ' of ' + str(total) if total > PREVIEW_COUNT else ''}</span>
     <div class="actions-row" style="margin: 0;">
       {f'<a class="btn btn-outline btn-sm" href="{view_all_url}" target="_blank" rel="noopener">View all ({total})</a>' if total else ''}
+      {f'<a class="btn btn-outline btn-sm" href="{download_url}">Download</a>' if download_url else ''}
       <form method="post" action="{clear_action}">
         <input type="hidden" name="next" value="/admin">
         <button type="submit" class="btn btn-outline-danger btn-sm">Clear all</button>
@@ -937,6 +945,7 @@ def _render_page(
         total_misses,
         "/admin/misses",
         "/admin/misses/clear",
+        "/admin/misses/download",
     )
     cache_card = _render_top_card(
         "Cached Answers",
@@ -946,6 +955,7 @@ def _render_page(
         total_cached,
         "/admin/cache",
         "/admin/cache/clear",
+        "/admin/cache/download",
     )
     conversations_card = _render_top_card(
         "Conversations",
@@ -955,6 +965,7 @@ def _render_page(
         total_conversations,
         "/admin/conversations",
         "/admin/conversations/clear",
+        "/admin/conversations/download",
     )
 
     return f"""
@@ -999,6 +1010,7 @@ def _render_page(
     </table>
     <div class="actions-row">
       <button type="submit" class="btn btn-primary">Save changes</button>
+      <a class="btn btn-outline btn-sm" href="/admin/config/download">Download</a>
     </div>
   </form>
 </div>
@@ -1053,6 +1065,7 @@ def _render_full_list_page(
     search_placeholder: str,
     clear_action: str,
     banner: tuple[str, str] | None = None,
+    download_url: str | None = None,
 ) -> str:
     banner_html = ""
     if banner:
@@ -1093,6 +1106,7 @@ def _render_full_list_page(
   </table>
   </div>
   <div class="actions-row">
+    {f'<a class="btn btn-outline" href="{download_url}">Download</a>' if download_url else ''}
     <form method="post" action="{clear_action}">
       <input type="hidden" name="next" value="{clear_action.rsplit('/', 1)[0]}">
       <button type="submit" class="btn btn-outline-danger">Clear all</button>
@@ -1141,6 +1155,29 @@ def admin_page(request: Request, _: None = Depends(require_admin)) -> str:
     )
 
 
+def _export_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+
+
+def _zip_log_files(log_dir: Path, glob_pattern: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(log_dir.glob(glob_pattern)):
+            zf.write(path, arcname=path.name)
+    return buffer.getvalue()
+
+
+@router.get("/admin/config/download")
+def admin_download_config(_: None = Depends(require_admin)) -> Response:
+    data = json.dumps(get_config(), indent=2)
+    filename = f"runtime_config_{_export_stamp()}.json"
+    return Response(
+        content=data,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/admin/misses", response_class=HTMLResponse)
 def admin_misses_page(request: Request, _: None = Depends(require_admin)) -> str:
     misses = read_misses()
@@ -1154,6 +1191,18 @@ def admin_misses_page(request: Request, _: None = Depends(require_admin)) -> str
         "Search questions...",
         "/admin/misses/clear",
         banner=_banner_from_query(request),
+        download_url="/admin/misses/download",
+    )
+
+
+@router.get("/admin/misses/download")
+def admin_download_misses(_: None = Depends(require_admin)) -> Response:
+    data = _zip_log_files(MISSES_LOG_DIR, "missed_questions*.jsonl")
+    filename = f"missed_questions_export_{_export_stamp()}.zip"
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -1170,6 +1219,18 @@ def admin_cache_page(request: Request, _: None = Depends(require_admin)) -> str:
         "Search questions or answers...",
         "/admin/cache/clear",
         banner=_banner_from_query(request),
+        download_url="/admin/cache/download",
+    )
+
+
+@router.get("/admin/cache/download")
+def admin_download_cache(_: None = Depends(require_admin)) -> Response:
+    data = json.dumps(list_cached_all(), indent=2)
+    filename = f"cached_answers_{_export_stamp()}.json"
+    return Response(
+        content=data,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -1186,6 +1247,18 @@ def admin_conversations_page(request: Request, _: None = Depends(require_admin))
         "Search by user id, question, or answer...",
         "/admin/conversations/clear",
         banner=_banner_from_query(request),
+        download_url="/admin/conversations/download",
+    )
+
+
+@router.get("/admin/conversations/download")
+def admin_download_conversations(_: None = Depends(require_admin)) -> Response:
+    data = _zip_log_files(CONVERSATIONS_LOG_DIR, "conversations*.jsonl")
+    filename = f"conversations_export_{_export_stamp()}.zip"
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

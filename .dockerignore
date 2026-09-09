@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.example
+logs/
+runtime_config.json
+.git/
+.gitignore
+.vscode/
+.idea/
+README.md
+INTEGRATIONINSTRUCTIONS.md
+tests/
+scripts/
+knowledge/

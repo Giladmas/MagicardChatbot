@@ -84,6 +84,32 @@ def list_cached(limit: int = 200) -> list[dict[str, Any]]:
     return entries[:limit]
 
 
+def list_cached_all() -> list[dict[str, Any]]:
+    """Every cached entry, for export - pages through the full collection."""
+    ensure_named_collection(CACHE_COLLECTION)
+    client = get_qdrant_client()
+    entries: list[dict[str, Any]] = []
+    offset = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=CACHE_COLLECTION, limit=256, with_payload=True, offset=offset
+        )
+        entries.extend(
+            {
+                "id": str(p.id),
+                "question": p.payload.get("question", ""),
+                "answer": p.payload.get("answer", ""),
+                "sources": p.payload.get("sources", []),
+                "cached_at": p.payload.get("cached_at", ""),
+            }
+            for p in points
+        )
+        if offset is None:
+            break
+    entries.sort(key=lambda e: e["cached_at"], reverse=True)
+    return entries
+
+
 def delete_cached(entry_id: str) -> bool:
     """Removes one cached entry by id. Returns whether anything was deleted."""
     client = get_qdrant_client()

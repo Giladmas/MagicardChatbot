@@ -75,6 +75,27 @@ Qdrant (local, via Docker):
 docker run -d --name magicard-qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant:latest
 ```
 
+## Deploying to Cloud Run
+
+The repo ships a `Dockerfile` that builds and serves the app with `uvicorn`, bound to `0.0.0.0:$PORT` (Cloud Run injects `PORT`, default `8080`). Deploy straight from source, either from a local clone or a GitHub-connected Cloud Build trigger:
+
+```bash
+gcloud run deploy magicard-chatbot --source . --region <your-region> --allow-unauthenticated
+```
+
+Set these env vars on the Cloud Run service (`gcloud run services update` / `--set-env-vars`, or via the console) — there is no `.env` file in the deployed container, so all of these must be set there directly:
+
+| Var | Notes |
+|---|---|
+| `OPENAI_API_KEY` | required |
+| `QDRANT_URL` | must point at Qdrant **Cloud** (not `localhost`) |
+| `QDRANT_API_KEY` | Qdrant Cloud API key |
+| `QDRANT_COLLECTION` | collection name |
+| `CHAT_SHARED_SECRET` | shared secret Laravel sends as `X-Chat-Secret`; leave unset to disable the check |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Basic-auth credentials for `/admin`; leave `ADMIN_PASSWORD` unset to disable the panel entirely |
+
+**Caveat — ephemeral filesystem:** Cloud Run containers don't share disk and get a fresh filesystem on every restart, redeploy, or scale-up. `logs/conversations.jsonl`, `logs/missed_questions.jsonl`, and any live tweaks made to `runtime_config.json` via the admin panel are **not persisted** — they reset whenever a new revision or instance spins up, and won't be consistent across multiple concurrently-running instances. This is a known, accepted limitation for now; revisit with a real store (e.g. GCS or Firestore) if persistent history/config becomes a requirement.
+
 ## Commands
 
 Run all of these from the project root with the venv activated (`.venv\Scripts\activate`).
