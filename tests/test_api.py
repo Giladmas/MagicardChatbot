@@ -204,6 +204,10 @@ def main() -> None:
             check("admin old rotate-at key gone", "missed_questions_rotate_at" not in r.text)
             check("admin sidebar renamed to Dictionary", "Dictionary" in r.text)
             check("admin has test chatbox", "Test Chatbot" in r.text and "chat-messages" in r.text)
+            check("admin has a Guide button", 'id="guide-toggle"' in r.text and ">Guide<" in r.text)
+            check("guide drawer starts closed", '<div id="guide-drawer" class="guide-drawer"' in r.text)
+            check("guide explains Knowledge Gaps step", "Check Knowledge Gaps" in r.text)
+            check("guide explains Reset actions step", "Reset actions" in r.text and "use with care" in r.text.lower())
             check("admin has no lingering Saved banner on plain GET", "Saved." not in r.text)
 
             # --- timestamp shown as "YYYY-MM-DD, HH:MM:SS", not raw ISO-8601 ---

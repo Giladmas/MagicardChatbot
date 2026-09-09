@@ -77,6 +77,48 @@ DICTIONARY: list[tuple[str, str]] = [
     ),
 ]
 
+# Step-by-step walkthrough for a first-time visitor who has never seen this
+# page before - what to check, in what order, and why. Shown in the slide-out
+# "Guide" drawer.
+GUIDE_STEPS: list[tuple[str, str]] = [
+    (
+        "Try the chatbot first",
+        "Use the Test Chatbot card to ask a few real questions the way a customer would. Try a "
+        "follow-up question too (e.g. “what about the fee?”) to see it use context from "
+        "the previous message.",
+    ),
+    (
+        "Check Knowledge Gaps",
+        "Anything the bot couldn't answer shows up here. This is your to-do list: if a question here "
+        "is something customers should get a real answer to, that information needs to be added to "
+        "the knowledge base (ask whoever maintains it). Once handled, delete it from the list.",
+    ),
+    (
+        "Skim Cached Answers",
+        "These are answers being reused for repeated questions to save time and cost. If one looks "
+        "wrong or outdated, delete it — the next person to ask that question will get a freshly "
+        "generated answer instead.",
+    ),
+    (
+        "Review Conversations",
+        "A saved record of real exchanges. On the full “View all” page, search by a "
+        "person's user id to see their entire conversation — useful if you need to investigate "
+        "a specific report or complaint.",
+    ),
+    (
+        "Adjust settings carefully (optional)",
+        "Live configuration lets you tune things like response length or how strict cache matching "
+        "is. Hover the hint under each setting, or check the Dictionary panel on the right if a term "
+        "is unclear. Changes apply immediately — no restart needed.",
+    ),
+    (
+        "Reset actions — use with care",
+        "These buttons wipe conversation memory or the entire answer cache for everyone, immediately "
+        "and permanently. Only use them when you're sure — typically right after updating the "
+        "knowledge base.",
+    ),
+]
+
 # One-time flash messages shown after a redirect - keeps a browser refresh from
 # ever re-showing "Saved" or re-submitting the action that triggered it.
 FLASH_MESSAGES: dict[str, str] = {
@@ -205,11 +247,77 @@ PAGE_CSS = """
     color: var(--text-muted);
     font-size: 0.82rem;
   }
-  .sidebar-intro { margin: 0 0 1rem 0; }
+  .sidebar-intro { margin: 0 0 1rem 0; color: var(--text-muted); }
   .dict-item { padding: 0.7rem 0; border-top: 1px solid var(--border); }
   .dict-item:first-of-type { border-top: none; }
   .dict-term { font-weight: 650; font-size: 0.85rem; margin-bottom: 0.2rem; }
   .dict-def { font-size: 0.79rem; color: var(--text-muted); line-height: 1.45; }
+  .guide-toggle-btn {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    border-color: rgba(255,255,255,0.3);
+  }
+  .guide-toggle-btn:hover { background: rgba(255,255,255,0.22); }
+  .guide-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(13, 23, 48, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 40;
+  }
+  .guide-backdrop.open { opacity: 1; pointer-events: auto; }
+  .guide-drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: min(360px, 90vw);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 4px 0 24px rgba(16, 24, 40, 0.18);
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 50;
+    overflow-y: auto;
+    padding: 1.5rem;
+  }
+  .guide-drawer.open { transform: translateX(0); }
+  .guide-drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.25rem;
+  }
+  .guide-drawer-header h2 { margin: 0; font-size: 1.1rem; }
+  .guide-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.2rem;
+  }
+  .guide-close:hover { color: var(--text); }
+  .guide-step { padding: 0.85rem 0; border-top: 1px solid var(--border); }
+  .guide-step:first-of-type { border-top: none; }
+  .guide-step-title { display: flex; gap: 0.5rem; align-items: baseline; font-weight: 650; font-size: 0.9rem; margin-bottom: 0.25rem; }
+  .guide-step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .guide-step-body { font-size: 0.83rem; color: var(--text-muted); line-height: 1.5; }
   .banner {
     border-radius: var(--radius);
     padding: 0.7rem 1.1rem;
@@ -572,6 +680,48 @@ def _render_conversation_rows(entries: list[dict], next_path: str) -> str:
     return rows
 
 
+def _render_guide() -> str:
+    steps = "".join(
+        f"""<div class="guide-step">
+  <div class="guide-step-title"><span class="guide-step-num">{i}</span> {html.escape(title)}</div>
+  <div class="guide-step-body">{html.escape(body)}</div>
+</div>"""
+        for i, (title, body) in enumerate(GUIDE_STEPS, start=1)
+    )
+    return f"""
+<button id="guide-toggle" class="btn btn-outline guide-toggle-btn" type="button" aria-expanded="false">Guide</button>
+<div id="guide-backdrop" class="guide-backdrop"></div>
+<div id="guide-drawer" class="guide-drawer" role="dialog" aria-label="Admin page guide">
+  <div class="guide-drawer-header">
+    <h2>New here? Start here.</h2>
+    <button id="guide-close" class="guide-close" type="button" aria-label="Close guide">&#10005;</button>
+  </div>
+  <p class="subtitle sidebar-intro">A quick walkthrough of what to check on this page, in order.</p>
+  {steps}
+</div>
+<script>
+(function () {{
+  var toggleBtn = document.getElementById('guide-toggle');
+  var closeBtn = document.getElementById('guide-close');
+  var drawer = document.getElementById('guide-drawer');
+  var backdrop = document.getElementById('guide-backdrop');
+
+  function setOpen(open) {{
+    drawer.classList.toggle('open', open);
+    backdrop.classList.toggle('open', open);
+    toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }}
+
+  toggleBtn.addEventListener('click', function () {{
+    setOpen(!drawer.classList.contains('open'));
+  }});
+  closeBtn.addEventListener('click', function () {{ setOpen(false); }});
+  backdrop.addEventListener('click', function () {{ setOpen(false); }});
+}})();
+</script>
+"""
+
+
 def _render_sidebar() -> str:
     items = "".join(
         f"<div class='dict-item'><div class='dict-term'>{html.escape(term)}</div>"
@@ -772,6 +922,7 @@ def _render_page(
     conversation_rows = _render_conversation_rows(conversations[:PREVIEW_COUNT], "/admin")
     sidebar_html = _render_sidebar()
     chatbox_html = _render_chatbox()
+    guide_html = _render_guide()
 
     banner_html = ""
     if banner:
@@ -814,7 +965,9 @@ def _render_page(
 </head>
 <body>
 <header class="topbar">
-  <div class="topbar-side"></div>
+  <div class="topbar-side">
+    {guide_html}
+  </div>
   <div class="topbar-center">
     <h1>Magicard Chatbot Admin</h1>
     <p>Live configuration, knowledge gaps &amp; answer cache</p>
