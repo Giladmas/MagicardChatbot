@@ -14,10 +14,20 @@ class RetrievedChunk:
     score: float
 
 
-def retrieve(query: str, top_k: int = 4, history: list[Turn] | None = None) -> list[RetrievedChunk]:
+def retrieve(
+    query: str,
+    top_k: int = 4,
+    history: list[Turn] | None = None,
+    extra_context: str | None = None,
+) -> list[RetrievedChunk]:
     # Fold the previous question into the search text so a referent-less
     # follow-up ("what about the fee?") still retrieves relevant chunks.
     search_text = f"{history[-1].question}\n{query}" if history else query
+    # Fold in the caller-supplied error context (e.g. a Sudo failure message)
+    # so retrieval can find the matching error-explanation chunk even when
+    # the user's question alone ("why did it fail?") is too generic.
+    if extra_context:
+        search_text = f"{search_text}\n{extra_context}"
     vector = embed_text(search_text)
     client = get_qdrant_client()
     results = client.query_points(

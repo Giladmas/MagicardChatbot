@@ -8,8 +8,11 @@ What's built and working today:
 
 - **Knowledge ingestion** — `knowledge/*.txt` → chunk → embed → upsert into Qdrant Cloud. Idempotent, safe to re-run.
 - **Retrieval** — Qdrant vector search for the top-k most relevant chunks per question.
-- **Generation** — GPT answers using only retrieved context; refuses (fixed string) when nothing relevant is found.
+- **Generation** — GPT answers using only retrieved context; refuses (fixed string) when nothing relevant is found. Tuned for a brief, warm, human tone rather than a wordy/robotic one, and genuine repeats within a conversation get a varied natural callback ("As I mentioned earlier, ...") instead of a flat restatement — see **Answer tone & repeat handling**, below.
 - **`POST /chat`** — validated (question length, required headers), rate-limited per user, graceful fallback answer if OpenAI/Qdrant fail (never a raw 500).
+- **Error context** — Laravel can attach an optional `context` object (provider, error_code, message, created_at) describing a user's recent failure (e.g. a failed Sudo card creation); it's folded into both retrieval and the prompt so the bot explains that specific failure instead of only answering generically. See `ERROR_CONTEXT_INTEGRATION.md`.
+- **Sudo error knowledge** — `knowledge/sudo_errors.txt` documents what each Sudo API route's failure means and how to explain it to a user, ingested like any other knowledge file so it's retrievable both by plain questions and by error context.
+- **Answer tone & repeat handling** — answers are brief and warm rather than wordy; a genuine repeat of an earlier question in the conversation (detected deterministically in code, not by GPT) gets a varied natural callback instead of a flat restatement. See **Answer tone & repeat handling**, below.
 - **Conversation memory** — recent turns are kept per `X-User-Id` and replayed to GPT (and folded into retrieval) so follow-up questions work; expires after `history_ttl_seconds` of inactivity so a returning user starts fresh.
 - **Semantic answer cache** — standalone (first-turn) questions are checked against a Qdrant-backed cache of previously answered questions; a close-enough match (`cache_similarity_threshold`) skips retrieval and generation entirely. Cleared automatically on every knowledge re-ingest.
 - **Conversation log** — every successful chat turn is saved to a browsable, admin-viewable record (`logs/conversations.jsonl`), separate from the live GPT-facing conversation memory above. Lets an operator review real exchanges, including a single user's full thread by searching their `X-User-Id`.
@@ -23,8 +26,8 @@ What's built and working today:
 2. **Chunking** splits each file into small pieces (one Q&A pair, or one paragraph), tagged with `source`/`category`/`title`.
 3. **Embedding** turns each chunk into a 1536-dim vector via OpenAI `text-embedding-3-small`.
 4. **Ingestion** upserts chunks into Qdrant. Point IDs are a hash of `(source, text)`, so re-running after editing `knowledge/` updates changed chunks and removes deleted ones — it never duplicates.
-5. **Retrieval** embeds a user's question (folded together with the previous question, if any, so referent-less follow-ups like "what about the fee?" still retrieve the right chunks) and asks Qdrant for the top-k most similar chunks (`retrieval_top_k`, live-configurable — see below).
-6. **Generation** — GPT (`openai_chat_model`, default `gpt-4o-mini`) answers using the retrieved chunks plus any recent conversation turns as context, capped at `max_answer_tokens`. Instructed to paraphrase/infer from context but never use outside knowledge, and to reply with a fixed refusal string when the context has nothing relevant. A refused question is logged for review (see **Missed questions**, below).
+5. **Retrieval** embeds a user's question (folded together with the previous question, if any, so referent-less follow-ups like "what about the fee?" still retrieve the right chunks — and folded with `context.message`, if Laravel sent one, so error-specific chunks like `knowledge/sudo_errors.txt` surface even when the question itself is generic, e.g. "why did it fail?") and asks Qdrant for the top-k most similar chunks (`retrieval_top_k`, live-configurable — see below).
+6. **Generation** — GPT (`openai_chat_model`, default `gpt-4o-mini`) answers using the retrieved chunks plus any recent conversation turns as context, capped at `max_answer_tokens` (or `ERROR_CONTEXT_MAX_TOKENS` for error-context answers — see **Error context**). Instructed to paraphrase/infer from context but never use outside knowledge, to stay brief and warm rather than wordy, and to reply with a fixed refusal string when the context has nothing relevant. Whether a question is a genuine repeat of an earlier one in the conversation is decided in code (`app/services/generation.py`'s `_detect_repeat()`), not left to GPT's own judgment — see **Answer tone & repeat handling**, below. A refused question is logged for review (see **Knowledge Gaps**, below).
 7. **`/chat` endpoint** — `POST /chat` exposes the pipeline over HTTP for Laravel to call. Validates the question, rate-limits per user, checks the answer cache and conversation history, and falls back to a friendly error message if OpenAI/Qdrant fail — see below for the full contract.
 
 ## Conversation memory
@@ -32,11 +35,21 @@ What's built and working today:
 Each `X-User-Id` gets its own rolling conversation, kept in memory on the server (no change needed on Laravel's side — it already sends `X-User-Id` on every call):
 
 - Every answered question/answer pair is appended to that user's history, capped at `history_max_turns` (oldest dropped first).
-- Prior turns are replayed to GPT as plain conversation messages (not re-injecting their retrieved chunks) so follow-ups are answered with context.
+- Prior turns are replayed to GPT as plain conversation messages (not re-injecting their retrieved chunks) so follow-ups are answered with context. This is also what genuine-repeat detection compares against — see **Answer tone & repeat handling**, below.
 - A conversation expires after `history_ttl_seconds` of inactivity — a user returning after a long gap starts fresh rather than dragging in stale context.
 - Turn off entirely with `history_enabled` if needed.
 - Wipe every user's conversation at once from the admin panel's "Reset actions" section (e.g. after a knowledge update that changes how something should be answered).
 - This is **live and ephemeral** — it's what the AI actually uses to answer follow-ups, kept in memory, gone on restart. For a saved, browsable record of past exchanges, see **Conversation log**, below — a different, persisted feature.
+
+## Answer tone & repeat handling
+
+Answers are tuned to read like a helpful, concise human agent, not a wordy or robotic bot:
+
+- **Brief by default** — one sentence in almost every case, two at most. The prompt explicitly bans filler that adds length without information ("it looks like", "I recommend", "feel free to", etc.).
+- **Genuine repeats get a varied callback, not a flat restatement.** If the user asks the same (or near-same) question again, or explicitly refers back to something earlier ("you said...", "again", "before"), the answer opens with a short natural line — "Like I mentioned before, ...", "As I mentioned earlier, ...", "Same as before - ...", "Just to go over that again, ...", "As I advised, ..." — rotating the phrase rather than reusing the same one, and never repeating the exact sentence used last time.
+- **Whether something is a "repeat" is decided in code, not by GPT.** Testing showed the model reliably over-applies a callback to any follow-up once a conversation has a couple of turns, even on a brand-new topic. `_detect_repeat()` in `app/services/generation.py` instead does a deterministic text-similarity match against each prior question in the conversation (plus a keyword check for explicit backreferences like "again"/"earlier"/"you said"), and tells the model the answer as a ground-truth `(conversation note: ...)` — the model is instructed to trust that note over its own judgment.
+- **The refusal string always wins.** Even if a question looks like a repeat, an out-of-scope question still gets the exact `REFUSAL` string with nothing attached — enforced both in the prompt and as a hard post-processing check in `generate_answer()`, since `app/api/chat.py` depends on an exact string match for cache/miss-log behavior.
+- **Known minor limitation:** for a distant callback (referring to something several turns back, not the immediately preceding one), the `sources` field in the response can reflect the more recent turn's knowledge files rather than the one actually being recalled, since `retrieve()` only folds the *immediately previous* question into its search text. The answer content itself stays correct (GPT recalls it from conversation history either way) - only the `sources` metadata can be imprecise in this specific case.
 
 ## Conversation log
 
@@ -53,12 +66,39 @@ Separate from the live memory above: every successful chat turn (a real answer, 
 
 Many users ask the same or near-identical standalone questions (e.g. "What is KYC?"). To avoid re-running retrieval + generation every time:
 
-- On the **first turn of a conversation** (no history yet), the question's embedding is checked against a Qdrant collection of previously answered questions.
+- On the **first turn of a conversation** (no history yet) **and only when the request has no `context`**, the question's embedding is checked against a Qdrant collection of previously answered questions.
 - A match scoring at or above `cache_similarity_threshold` (cosine similarity) returns the cached answer directly — no OpenAI generation call, no retrieval.
 - A cache miss runs the normal pipeline, then stores the fresh answer for next time. Refusals are never cached, since a refusal cached under one phrasing shouldn't block a differently-phrased question that might retrieve something useful.
+- **Requests with `context` always skip the cache**, both lookup and store — a context-grounded answer (e.g. explaining one user's specific Sudo failure) must never be served to a different user asking something semantically similar. See **Error context**, below.
 - The cache is cleared automatically every time `python -m scripts.ingest` runs, since cached answers are only valid for the knowledge content they were generated from.
 - Turn off entirely with `cache_enabled` if needed.
 - Browse, delete individual entries, or clear the whole cache from the admin panel's "Cached Answers" section — useful when a cached answer turns out wrong or stale before the next re-ingest.
+
+## Error context
+
+Laravel can attach an optional `context` object to `POST /chat`, alongside `question`, describing a specific failure the user just experienced (currently the Sudo virtual-card flow):
+
+```json
+{
+  "question": "why did my card creation fail?",
+  "context": {
+    "provider": "sudo",
+    "error_code": "400",
+    "message": "The customer doesn't create properly, Contact with owner",
+    "created_at": "2026-09-16T14:32:05+00:00"
+  }
+}
+```
+
+- Fully optional — omit it (or any field inside it) for a plain question, and behavior is unchanged.
+- Not stored as conversation memory — it's a one-shot, per-request field Laravel decides to attach or not.
+- `context.message` is folded into the retrieval search alongside the question, so knowledge like `knowledge/sudo_errors.txt` (Sudo route failure explanations) surfaces even when the question itself is generic ("why did it fail?").
+- Also appended to the GPT prompt as a `"User's recent error:"` block (`app/services/generation.py`), so the model explains the specific failure using both the error details and whatever knowledge was retrieved.
+- **Never exposes raw technical details to the user** — provider names, HTTP status codes, error codes, phrases like "Bad Request", or timestamps from the `context` block are explicitly kept out of the answer; the model translates the failure into plain language plus the matching knowledge chunk's next-step guidance.
+- **Answer length is capped tighter than normal** (`ERROR_CONTEXT_MAX_TOKENS = 80` in `app/services/generation.py`, vs. the general `max_answer_tokens` default of 300) so these answers stay to a short "cause, then next step" format rather than drifting into a longer explanation.
+- Automatically bypasses the semantic answer cache (see above) so a context-grounded answer is never reused across users.
+
+Full details, including the Laravel-side lookup this depends on and the Sudo API route reference behind `knowledge/sudo_errors.txt`, are in `ERROR_CONTEXT_INTEGRATION.md`.
 
 ## Setup
 
@@ -154,6 +194,20 @@ curl -X POST http://127.0.0.1:8000/chat \
 # -> {"answer": "...", "sources": ["kyc.txt"]}
 ```
 
+With optional error context (see **Error context**, above):
+
+```bash
+curl -X POST http://127.0.0.1:8000/chat \
+  -H "Content-Type: application/json" \
+  -H "X-Chat-Secret: <value of CHAT_SHARED_SECRET, if set>" \
+  -H "X-User-Id: <end user's id>" \
+  -d '{
+    "question": "why did my card creation fail?",
+    "context": {"provider": "sudo", "error_code": "400", "message": "The customer does not create properly, contact with owner"}
+  }'
+# -> {"answer": "...", "sources": ["sudo_errors.txt"]}
+```
+
 Headers:
 - **`X-Chat-Secret`** — only required if `CHAT_SHARED_SECRET` is non-empty in `.env`; leave it unset for local dev. Missing/wrong -> `401`.
 - **`X-User-Id`** — **always required.** Identifies the end user for rate limiting; Laravel must forward its own user id here (this is server-to-server, so we can't see the real caller otherwise). Missing -> `400`.
@@ -173,7 +227,7 @@ Some values are meant to be tuned without a redeploy:
 | Key | Default | What it controls |
 |---|---|---|
 | `max_question_words` | 20 | Longest question `/chat` will accept before returning `400`. |
-| `max_answer_tokens` | 300 | Caps GPT's response length (`max_tokens` on the OpenAI call). |
+| `max_answer_tokens` | 300 | Caps GPT's response length (`max_tokens` on the OpenAI call) for normal answers. Error-context answers use a separate, tighter fixed cap instead (`ERROR_CONTEXT_MAX_TOKENS = 80` in code, not live-configurable) — see **Error context**. |
 | `rate_limit_seconds` | 10 | Minimum gap between requests from the same `X-User-Id`. |
 | `retrieval_top_k` | 4 | How many chunks Qdrant returns per question. |
 | `temperature` | 0.0 | GPT sampling temperature — 0 is deterministic/literal; raise it for more varied phrasing. |

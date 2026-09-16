@@ -30,6 +30,7 @@ X-User-Id: <string, required>
 | Field | Type | Notes |
 |---|---|---|
 | `question` | string | The user's message, as typed. Leading/trailing whitespace is trimmed server-side. Empty (or whitespace-only) after trimming → `400`. |
+| `context` | object, optional | Describes a specific failure the user just experienced (e.g. a failed Sudo card creation), so the bot can explain *that* instead of only answering from the static knowledge base. See **Error context**, below. Omit entirely for a plain question. |
 
 ### Response — success (`200`)
 
@@ -40,9 +41,16 @@ X-User-Id: <string, required>
 }
 ```
 
-- `answer` — plain text (not markdown/HTML), safe to display directly. May sometimes be the model's
-  built-in refusal string ("I don't have information about that...") when nothing relevant was found —
-  this is a normal `200`, not an error; see **Handling "I don't know" answers** below.
+- `answer` — plain text (not markdown/HTML), safe to display directly. Tuned to be brief and
+  conversational rather than wordy/robotic. If the user re-asks something already covered earlier in
+  the same conversation, `answer` may open with a natural callback ("As I mentioned earlier, ...",
+  "Like I mentioned before, ...") instead of repeating the exact same sentence — this is intentional,
+  not a bug; don't assume the same question always returns byte-identical text within a conversation.
+  May sometimes be the model's built-in refusal string ("I don't have information about that...") when
+  nothing relevant was found — this is a normal `200`, not an error; see **Handling "I don't know"
+  answers** below. The refusal string is always returned byte-for-byte with nothing else attached, even
+  in a conversation where a callback would otherwise apply, so it's still safe to detect via exact
+  string match.
 - `sources` — which knowledge-base files the answer was grounded in. Useful for debugging/logging;
   most UIs won't show this to end users, but it's handy if you want a "was this helpful?" flow tied to
   specific docs later.
@@ -52,7 +60,49 @@ Note: **every failure downstream of validation still returns `200`** with a frie
 see **Error philosophy** below. Laravel does not need special handling for OpenAI/Qdrant outages; just
 display `answer` as-is.
 
-## 2. Possible inputs — restrictions to enforce or expect
+## 2. Error context — attaching a recent failure
+
+If Laravel's `ChatbotService::ask()` finds the calling user has a recent logged failure
+(currently only the Sudo payment gateway writes to Laravel's `error_logs` table, within a
+configurable window, default 30 minutes), attach it as `context` on the request:
+
+```json
+{
+  "question": "why did my card creation fail?",
+  "context": {
+    "provider": "sudo",
+    "error_code": "400",
+    "message": "The customer doesn't create properly, Contact with owner",
+    "created_at": "2026-09-16T14:32:05+00:00"
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `provider` | string, optional | Free-form (e.g. `"sudo"`). No fixed enum on the chatbot side — new providers (Stripe, Strowallet, CardyFie, etc.) just start working once Laravel sends them, no chatbot change needed. |
+| `error_code` | string, optional | Whatever code the provider returned, as a string. |
+| `message` | string, optional | The provider's failure message/reason, as recorded in `error_logs`. This is the field that most influences the answer — it's folded into the bot's knowledge search, so a specific, real message retrieves a much better explanation than a vague one. |
+| `created_at` | string, optional | ISO 8601 timestamp of when the error occurred. |
+
+- All four fields are optional strings — send whichever you have; nothing is required.
+- If the user has no recent error, omit `context` entirely — the request behaves exactly as
+  a plain question always has.
+- **One-shot only.** `context` is not stored as part of the ongoing conversation — Laravel
+  must decide per-request whether to attach it (i.e. re-send it on every follow-up where it's
+  still relevant, don't assume the bot remembers it from a prior turn).
+- The chatbot has no knowledge of Laravel's `error_logs` table or database — Laravel does the
+  lookup and hands over this flat object; the chatbot only ever sees what's included here.
+- Requests with `context` automatically bypass the semantic answer cache (see below), so a
+  context-grounded answer is never reused across users — no action needed from Laravel for this.
+- The resulting `answer` is intentionally short (one or two sentences: a plain-language cause, then
+  the next step) and never repeats raw technical details from `context` back to the user — no provider
+  name, HTTP status code, error code, or "Bad Request"-style wording. Safe to show end users directly.
+- Full background (including the Laravel-side `error_logs` lookup, and the Sudo API route
+  reference the chatbot draws its explanations from) is in `ERROR_CONTEXT_INTEGRATION.md` in
+  the chatbot repo.
+
+## 3. Possible inputs — restrictions to enforce or expect
 
 | Constraint | Default | Where enforced | What happens if violated |
 |---|---|---|---|
@@ -77,22 +127,25 @@ prepend history into `question` itself; just keep sending the same `X-User-Id` f
 their session, exactly as already required for rate limiting. A conversation resets automatically after
 ~30 minutes of inactivity for that user (live-configurable server-side), so a returning user later just
 starts fresh rather than dragging in stale context. This is transparent to the request/response
-contract above — nothing changes shape, answers may just be more contextually aware.
+contract above — nothing changes shape, answers may just be more contextually aware (including, per
+above, occasionally opening with a natural callback like "As I mentioned earlier, ..." if the user
+re-asks something from earlier in the same conversation).
 
 **Semantic answer cache — also transparent to Laravel.** Repeated or near-identical standalone
 questions (e.g. many different users asking "What is KYC?") may be served from a cache instead of
 re-running the full AI pipeline — same request/response shape, just potentially faster. No action
 needed on Laravel's side; mentioned here only so a "why was that answer instant" question has an
-answer.
+answer. Requests carrying `context` (see section 2) always skip the cache, so a context-grounded
+answer is never reused across users.
 
-## 3. Possible outputs — what your UI needs to handle
+## 4. Possible outputs — what your UI needs to handle
 
 | Status | Meaning | Laravel should... |
 |---|---|---|
 | `200` with a real answer | Success | Display `answer`. |
 | `200` with the refusal string (`"I don't have information about that in the Magicard knowledge base."`) | The bot found nothing relevant — this is still `200`, not an error | Display it like a normal message (it's plain English), or optionally detect this exact string and show a custom "want to talk to a human?" CTA instead. The question was automatically logged server-side for the ops team to review, so no action needed from Laravel beyond the UI decision. |
 | `200` with the fallback error string (`"Sorry, I'm having trouble answering right now. Please try again shortly."`) | OpenAI or Qdrant failed upstream (timeout, outage, quota) | Display it like a normal message — it already reads as a graceful apology. Optionally detect this exact string to trigger a "retry" button, since it may be transient. |
-| `400` | Bad request (empty question, question too long, missing `X-User-Id`) | These indicate a bug in Laravel's request-building (should be prevented client-side per section 2), not something to show the end user verbatim — surface a generic "something went wrong" and log the `detail` for debugging. |
+| `400` | Bad request (empty question, question too long, missing `X-User-Id`) | These indicate a bug in Laravel's request-building (should be prevented client-side per section 3), not something to show the end user verbatim — surface a generic "something went wrong" and log the `detail` for debugging. |
 | `401` | Missing/wrong `X-Chat-Secret` | Configuration problem, not a user-facing case — should never happen in production if the secret is set correctly. Alert/log loudly if seen. |
 | `429` | Rate limited | Show `detail` directly to the user (it's already phrased for end users, e.g. "Too many requests. Try again in 5 seconds.") or build your own UI around it (e.g. disable the send button for that many seconds). |
 | Network error / timeout / non-JSON response | The chatbot service itself is unreachable | Not something the chatbot API can help with — this is Laravel needing its own HTTP client timeout + retry/circuit-breaker handling. Recommend a request timeout of ~15-20s (OpenAI generation can occasionally be slow) and treating a timeout the same as a `200` fallback-error case in the UI. |
@@ -101,7 +154,7 @@ Two distinct "I can't help" strings exist (**refusal** vs **fallback error**) �
 things (no matching knowledge vs. an infrastructure failure) and it's worth keeping them visually or
 behaviorally distinct if you build anything smarter than "just print `answer`".
 
-## 4. Error philosophy — why this matters for Laravel's design
+## 5. Error philosophy — why this matters for Laravel's design
 
 By design, `/chat` only returns non-`200` for things **Laravel itself** got wrong (bad input, missing
 auth, rate limit). Anything that goes wrong on the AI/infra side (OpenAI down, Qdrant unreachable,
@@ -114,15 +167,25 @@ message — see `app/api/chat.py`. This means:
   side, since it means something is broken in the integration itself (wrong secret, malformed request,
   or the chatbot service is fully down) — not a routine "AI had a bad day."
 
-## 5. Example Laravel integration (Guzzle)
+## 6. Example Laravel integration (Guzzle)
 
 ```php
+$payload = ['question' => $userMessage];
+
+// Attach recent error context, if any (see section 2) — e.g. from ErrorLog::query()
+if ($recentError = $this->getRecentError($userId)) {
+    $payload['context'] = [
+        'provider' => $recentError->provider,
+        'error_code' => $recentError->error_code,
+        'message' => $recentError->message,
+        'created_at' => $recentError->created_at->toIso8601String(),
+    ];
+}
+
 $response = Http::withHeaders([
     'X-User-Id' => (string) auth()->id() ?? session()->getId(),
     'X-Chat-Secret' => config('services.magicard_chatbot.secret'),
-])->timeout(20)->post(config('services.magicard_chatbot.url') . '/chat', [
-    'question' => $userMessage,
-]);
+])->timeout(20)->post(config('services.magicard_chatbot.url') . '/chat', $payload);
 
 if ($response->status() === 429) {
     return response()->json(['error' => $response->json('detail')], 429);
@@ -145,7 +208,7 @@ MAGICARD_CHATBOT_URL=https://chatbot.internal.magicard.com
 MAGICARD_CHATBOT_SECRET=   # only if the chatbot's CHAT_SHARED_SECRET is set — get this from whoever deployed it
 ```
 
-## 6. Operational notes worth knowing before going live
+## 7. Operational notes worth knowing before going live
 
 - **Health check**: `GET /health` → `{"status": "ok"}`, no auth required. Point your load balancer /
   uptime monitor at this, not `/chat` (which requires headers and would burn rate-limit/API quota).

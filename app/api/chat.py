@@ -9,7 +9,7 @@ from app.runtime_config import get_config
 from app.services.answer_cache import lookup, store
 from app.services.conversation_history import append_turn, get_history
 from app.services.conversation_log import log_turn
-from app.services.generation import FALLBACK_ERROR, REFUSAL, generate_answer
+from app.services.generation import ERROR_CONTEXT_MAX_TOKENS, FALLBACK_ERROR, REFUSAL, generate_answer
 from app.services.miss_log import log_miss
 from app.services.rate_limit import check_rate_limit
 from app.services.retrieval import retrieve
@@ -18,8 +18,16 @@ router = APIRouter()
 logger = logging.getLogger("magicard.chat")
 
 
+class ChatContext(BaseModel):
+    provider: str | None = None
+    error_code: str | None = None
+    message: str | None = None
+    created_at: str | None = None
+
+
 class ChatRequest(BaseModel):
     question: str
+    context: ChatContext | None = None
 
 
 class ChatResponse(BaseModel):
@@ -63,7 +71,9 @@ def chat(
 
     # Cache only applies to the first turn of a conversation - follow-ups are
     # conversation-specific and unlikely to recur verbatim across users.
-    if cfg["cache_enabled"] and not history:
+    # Also skip whenever error context is present: a context-grounded answer
+    # could otherwise be served to a different user with no/different context.
+    if cfg["cache_enabled"] and not history and not body.context:
         try:
             cached = lookup(question, cfg["cache_similarity_threshold"])
         except Exception:
@@ -78,7 +88,12 @@ def chat(
             return ChatResponse(answer=answer, sources=sources)
 
     try:
-        chunks = retrieve(question, top_k=cfg["retrieval_top_k"], history=history)
+        chunks = retrieve(
+            question,
+            top_k=cfg["retrieval_top_k"],
+            history=history,
+            extra_context=body.context.message if body.context else None,
+        )
     except Exception:
         logger.exception("retrieval failed for question=%r", question)
         return ChatResponse(answer=FALLBACK_ERROR, sources=[])
@@ -88,8 +103,9 @@ def chat(
             question,
             chunks,
             history=history,
-            max_tokens=cfg["max_answer_tokens"],
+            max_tokens=ERROR_CONTEXT_MAX_TOKENS if body.context else cfg["max_answer_tokens"],
             temperature=cfg["temperature"],
+            error_context=body.context,
         )
     except openai.OpenAIError:
         logger.exception("OpenAI call failed for question=%r", question)
@@ -108,7 +124,7 @@ def chat(
 
     if answer == REFUSAL:
         log_miss(question, rotate_at=cfg["knowledge_gaps_rotate_at"])
-    elif cfg["cache_enabled"] and not history:
+    elif cfg["cache_enabled"] and not history and not body.context:
         try:
             store(question, answer, sources)
         except Exception:

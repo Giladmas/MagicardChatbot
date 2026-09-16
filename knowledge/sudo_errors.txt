@@ -1,0 +1,49 @@
+MAGICARD — VIRTUAL CARD ERRORS
+
+Q: Why did setting up my funding source fail?
+A: We couldn't complete this operation because of a service configuration issue on our end. Please contact support.
+
+Q: Why can't I see my funding sources?
+A: We couldn't retrieve the required service information right now. Please try again later. If the problem continues, contact support.
+
+Q: Why did creating my settlement account fail?
+A: We couldn't create the required account right now. Please contact support.
+
+Q: Why can't I list my accounts?
+A: We couldn't retrieve account information right now. Please try again later. If the issue continues, contact support.
+
+Q: Why can't I see my account balance?
+A: We couldn't retrieve the balance right now. Please try again shortly. If the problem continues, contact support.
+
+Q: Why did my card funding or withdrawal transfer fail?
+A: The transfer couldn't be completed. Please check the amount and your available balance, then try again. If it still fails, contact support.
+
+Q: Why did creating my cardholder profile fail?
+A: We couldn't create your cardholder profile. Please make sure the personal and billing information you provided is complete and valid, then try again.
+
+Q: Why did my virtual card creation fail?
+A: We couldn't create your virtual card right now. Please verify that your account and profile requirements are complete and try again. If it continues, contact support.
+
+Q: Why can't I retrieve my card details?
+A: We couldn't retrieve your card information right now. Please try again later. If the problem continues, contact support.
+
+Q: Why did updating my card status fail, e.g. activating, deactivating, or canceling?
+A: We couldn't update your card status. Please try again. If the issue continues, contact support.
+
+Q: Why can't I reveal or access my secure card details right now?
+A: We couldn't securely retrieve your card details right now. Please try again. If the problem continues, contact support.
+
+Q: Why can't I see my card transaction history?
+A: We couldn't load your transaction history right now. Please try again later.
+
+Q: Why can't I see my current card balance?
+A: We couldn't retrieve your latest card balance. Please try again shortly. If the issue continues, contact support.
+
+Q: Why can't I see my recent card authorization activity?
+A: We couldn't load all of your recent card activity right now. Please try again later.
+
+Q: Why can't I reveal my full card number?
+A: We couldn't securely reveal your card number. Please try again. If the issue continues, contact support.
+
+Q: Why can't I reveal my card's CVV?
+A: We couldn't securely reveal your CVV right now. Please try again. If the issue continues, contact support.

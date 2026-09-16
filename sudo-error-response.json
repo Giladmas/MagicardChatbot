@@ -1,0 +1,146 @@
+[
+  {
+    "route": "POST /fundingsources",
+    "magicard_helper": "funding_source_create()",
+    "purpose": "Create the default funding source used by Magicard's Sudo setup",
+    "success": "200 — request succeeds and a funding source is created",
+    "failure": "400 Bad Request — Sudo exposes 400 for this route; the current reference page does not publish a more specific failure reason/body",
+    "user_solution": "We couldn't complete this operation because of a service configuration issue. Please contact support.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "GET /fundingsources",
+    "magicard_helper": "get_funding_source()",
+    "purpose": "List existing Sudo funding sources",
+    "success": "200 — funding sources returned",
+    "failure": "400 Bad Request — Sudo exposes 400 for this route; no more specific route-level reason is published",
+    "user_solution": "We couldn't retrieve the required service information. Please try again later. If the problem continues, contact support.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "POST /accounts",
+    "magicard_helper": "create_sudo_account()",
+    "purpose": "Create a Sudo business settlement account in the requested currency",
+    "success": "200 — account created",
+    "failure": "400 Bad Request — Sudo exposes 400; the route requires valid account parameters such as type, currency, and accountType, but does not publish a specific 400 reason",
+    "user_solution": "We couldn't create the required account right now. Please contact support.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "GET /accounts?type=account",
+    "magicard_helper": "get_sudo_accounts()",
+    "purpose": "List Sudo settlement/business accounts",
+    "success": "200 — accounts returned",
+    "failure": "400 Bad Request — Sudo exposes 400; no more specific route-level reason is published",
+    "user_solution": "We couldn't retrieve account information right now. Please try again later. If the issue continues, contact support.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "GET /accounts/{id}/balance",
+    "magicard_helper": "getSudoBalance()",
+    "purpose": "Retrieve the available balance of the Sudo settlement account",
+    "success": "200 — account balance returned",
+    "failure": "400 Bad Request — Sudo exposes 400; no more specific route-level reason is published",
+    "user_solution": "We couldn't retrieve the balance right now. Please try again shortly. If the problem continues, contact support.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "POST /accounts/transfer",
+    "magicard_helper": "sudoFundCard(), sudoWithdrawCard()",
+    "purpose": "Transfer funds between settlement/account/wallet/card accounts; used by Magicard to fund a card or pull card balance back",
+    "success": "200 — transfer request succeeds",
+    "failure": "400 Bad Request — Sudo exposes 400; the current reference page does not publish a specific route-level failure reason",
+    "user_solution": "The transfer couldn't be completed. Check the amount and your available balance, then try again. If it still fails, contact support.",
+    "user_can_solve": "possibly"
+  },
+  {
+    "route": "POST /customers",
+    "magicard_helper": "create_sudo_customer()",
+    "purpose": "Create the Sudo customer/cardholder record used for card issuance",
+    "success": "200 — customer created",
+    "failure": "400 Bad Request — Sudo exposes 400; required customer fields include type, name, phone number, status and billing address, but the route page does not publish a specific 400 reason",
+    "user_solution": "We couldn't create your cardholder profile. Please make sure the personal and billing information you provided is complete and valid, then try again.",
+    "user_can_solve": "possibly"
+  },
+  {
+    "route": "POST /cards",
+    "magicard_helper": "create_virtual_card()",
+    "purpose": "Create or map a new virtual card for a customer",
+    "success": "2xx — card creation/mapping succeeds",
+    "failure": "400 Bad Request — Sudo exposes 400; the current route documentation does not publish a specific 400 reason",
+    "user_solution": "We couldn't create your virtual card right now. Please verify that your account and profile requirements are complete and try again. If it continues, contact support.",
+    "user_can_solve": "possibly"
+  },
+  {
+    "route": "GET /cards/{id}",
+    "magicard_helper": "getSudoCard()",
+    "purpose": "Retrieve the full Sudo card object and details",
+    "success": "200 — card details returned",
+    "failure": "400 Bad Request — Sudo exposes 400; no more specific route-level reason is published",
+    "user_solution": "We couldn't retrieve your card information right now. Please try again later. If the problem continues, contact support.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "PUT /cards/{id}",
+    "magicard_helper": "cardUpdate()",
+    "purpose": "Update card details or status, including active, inactive, or canceled",
+    "success": "200 — card updated",
+    "failure": "No route-specific failure response/reason is currently published beyond the documented request constraints, including valid status values and cancellation requirements",
+    "user_solution": "We couldn't update your card status. Please try again. If the issue continues, contact support.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "GET /cards/{id}/token",
+    "magicard_helper": "getCardToken()",
+    "purpose": "Generate the short-lived card token used to access sensitive card data",
+    "success": "200 — card token generated successfully",
+    "failure": "400 is displayed in Sudo's route reference, but the displayed example currently contains the success payload rather than a documented failure reason",
+    "user_solution": "We couldn't securely retrieve your card details right now. Please try again. If the problem continues, contact support.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "GET /cards/{id}/transactions",
+    "magicard_helper": "getCardTransactions()",
+    "purpose": "Retrieve paginated transaction history for a specific card",
+    "success": "200 — transactions returned",
+    "failure": "400 Bad Request — Sudo exposes 400; no more specific route-level reason is published",
+    "user_solution": "We couldn't load your transaction history right now. Please try again later.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "GET /cards/{id}/balance",
+    "magicard_helper": "MobileController::sudoCardBalance()",
+    "purpose": "Retrieve the live balance of a specific card",
+    "success": "200 — card balance returned",
+    "failure": "400 Bad Request — Sudo exposes 400; no more specific route-level reason is published",
+    "user_solution": "We couldn't retrieve your latest card balance. Please try again shortly. If the issue continues, contact support.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "GET /cards/{id}/authorizations?page=X&limit=100",
+    "magicard_helper": "MobileController inline card transaction view",
+    "purpose": "Retrieve card authorization attempts and authorization activity used alongside settled transactions",
+    "success": "200 — authorizations returned",
+    "failure": "400 Bad Request — Sudo exposes 400; no more specific route-level reason is published",
+    "user_solution": "We couldn't load all of your recent card activity right now. Please try again later.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "GET /cards/{id}/secure-data/number",
+    "magicard_helper": "MobileController::cardRevealData()",
+    "purpose": "Reveal the real PAN/card number using the short-lived card-token Bearer",
+    "success": "Secure card number is returned when the secure-data request and card token are valid",
+    "failure": "Sudo's official Displaying Sensitive Card Data guide documents the secure-data flow and token requirement, but does not publish a standalone route-specific failure table",
+    "user_solution": "We couldn't securely reveal your card number. Please try again. If the issue continues, contact support.",
+    "user_can_solve": "no"
+  },
+  {
+    "route": "GET /cards/{id}/secure-data/cvv2",
+    "magicard_helper": "MobileController::cardRevealData()",
+    "purpose": "Reveal the real CVV2 using the short-lived card-token Bearer",
+    "success": "CVV2 is returned when the secure-data request and card token are valid",
+    "failure": "Sudo's official Displaying Sensitive Card Data guide documents the secure-data flow and token requirement, but does not publish a standalone route-specific failure table",
+    "user_solution": "We couldn't securely reveal your CVV right now. Please try again. If the issue continues, contact support.",
+    "user_can_solve": "no"
+  }
+]

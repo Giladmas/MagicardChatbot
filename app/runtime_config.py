@@ -22,7 +22,7 @@ DEFAULTS: dict[str, Any] = {
     "max_answer_tokens": 300,
     "rate_limit_seconds": 10,
     "retrieval_top_k": 4,
-    "temperature": 0.0,
+    "temperature": 0.2,
     "knowledge_gaps_rotate_at": 200,
     "history_enabled": True,
     "history_max_turns": 6,
