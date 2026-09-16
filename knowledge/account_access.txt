@@ -1,0 +1,28 @@
+MAGICARD — ACCOUNT ACCESS: REGISTRATION, LOGIN, PASSWORD RESET, 2FA, DELETION
+
+Q: What do I need to register for a Magicard account?
+A: You need your first and last name, a valid email address, and a password. A wallet is created for you automatically once you register.
+
+Q: Can I log in with my username instead of my email?
+A: Yes, you can log in with either your email address or your username, plus your password.
+
+Q: I forgot my password, how do I reset it?
+A: Request a reset code by entering your email - you'll receive a numeric code by email. Enter that code to verify it, then set a new password. The code expires after a while, and you can request a new one if needed (with a short cooldown between requests).
+
+Q: I didn't get my password reset or verification code, what do I do?
+A: Check your email again after a moment, then use the resend option if you still don't see it - resending has a short cooldown between attempts. If you registered using Google or Facebook login, use that provider to sign in instead of a password reset.
+
+Q: How do I set up two-factor authentication (2FA)?
+A: In your account security settings, scan the QR code shown with an authenticator app (such as Google Authenticator), then confirm setup by entering the 6-digit code the app generates.
+
+Q: I lost access to my authenticator app, how do I get back into my account?
+A: There's no self-service backup code for two-factor authentication, so you'll need to contact Magicard support to have 2FA reset on your account.
+
+Q: Do I need to enter my 2FA code every time I log in?
+A: Yes, two-factor authentication is required again each time you log in, not just once per device.
+
+Q: How do I delete my Magicard account?
+A: You can delete your account from your profile settings by confirming the deletion prompt - no password re-entry is required. This isn't reversible through self-service, so make sure you've withdrawn any funds you want to keep beforehand.
+
+Q: Do I need to withdraw my balance before deleting my account?
+A: It isn't required by the system, but it's strongly recommended - once deleted, there's no self-service way to access remaining funds, so withdraw first.

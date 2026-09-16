@@ -13,3 +13,7 @@ Customers should always verify the network and deposit address before sending cr
 Do not send funds using an unsupported network.
 
 If a deposit has not appeared after confirmation, the customer should contact Magicard support and provide the transaction hash.
+
+A network funding fee applies to USDT deposits: a flat $1 is deducted, then an additional 1% is deducted from the remainder. For example, sending 100 USDT credits 98.01 USD to the wallet. Deposits of 1 USDT or less do not credit any balance after the fee.
+
+After sending USDT, the customer must submit the transaction hash (TxID) so the deposit can be verified on-chain. Common reasons a submission is rejected: the transaction hash format is invalid, the same transaction hash was already submitted before, no matching USDT transfer to Magicard's deposit address was found in that transaction, or the transaction has not yet confirmed on-chain (the customer should try again shortly in that case).

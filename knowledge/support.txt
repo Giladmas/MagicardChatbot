@@ -1,0 +1,16 @@
+MAGICARD — CONTACTING SUPPORT
+
+Q: Is there a support email address I can write to?
+A: There isn't a dedicated support email address. To reach Magicard, open a Support Ticket in the app, or use the Contact form on the website.
+
+Q: How do I contact Magicard support?
+A: Use the Support Tickets section in the app (under Account > Get Support), or the Contact form on the website. Both go to the support team.
+
+Q: What information do I need to open a support ticket?
+A: A subject, your message describing the issue, and your name and email. You can also attach files if that helps explain the problem.
+
+Q: Can I keep messaging on an old support ticket?
+A: Only if it's still open. Once a ticket is marked closed, it can't receive new messages - open a new ticket instead and reference the old one if needed.
+
+Q: Where can I check the status of my support ticket?
+A: In the Support Tickets section of the app, where you can see your tickets and their conversation history.

@@ -1,0 +1,16 @@
+MAGICARD — GIFT CARDS
+
+Q: Does Magicard sell gift cards?
+A: Yes, you can browse and search a catalog of gift cards in the app and purchase them using your wallet balance.
+
+Q: Do I need to complete KYC to buy a gift card?
+A: Browsing and searching gift cards doesn't require KYC, but completing identity verification is required when you actually purchase one.
+
+Q: How do I pay for a gift card?
+A: Gift card purchases are paid from your Magicard wallet balance. A fee applies (a percentage plus a fixed amount), and purchases are subject to daily and monthly limits.
+
+Q: Why did my gift card purchase fail?
+A: The most common reason is insufficient wallet balance to cover the gift card amount plus the purchase fee. Top up your wallet and try again.
+
+Q: Who receives the gift card after I buy it?
+A: Delivery goes to whichever email address and phone number you enter as the recipient at checkout - it isn't automatically sent to your own account, so double-check the recipient details before confirming.
