@@ -230,7 +230,7 @@ Some values are meant to be tuned without a redeploy:
 | `max_answer_tokens` | 300 | Caps GPT's response length (`max_tokens` on the OpenAI call) for normal answers. Error-context answers use a separate, tighter fixed cap instead (`ERROR_CONTEXT_MAX_TOKENS = 80` in code, not live-configurable) — see **Error context**. |
 | `rate_limit_seconds` | 10 | Minimum gap between requests from the same `X-User-Id`. |
 | `retrieval_top_k` | 4 | How many chunks Qdrant returns per question. |
-| `temperature` | 0.0 | GPT sampling temperature — 0 is deterministic/literal; raise it for more varied phrasing. |
+| `temperature` | 0.2 | GPT sampling temperature — 0 is deterministic/literal; raise it for more varied phrasing. |
 | `knowledge_gaps_rotate_at` | 200 | Once `logs/missed_questions.jsonl` reaches this many lines, it's archived and a fresh file starts (see **Knowledge Gaps**, below). |
 | `history_enabled` | true | Turns conversation memory on/off entirely. |
 | `history_max_turns` | 6 | Max prior turns replayed to GPT per user; oldest dropped first. |

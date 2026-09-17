@@ -232,6 +232,10 @@ MAGICARD_CHATBOT_SECRET=   # only if the chatbot's CHAT_SHARED_SECRET is set —
   - **Cached Answers** and **Conversations** — browsable records of cached answers and real chat
     exchanges (searchable by `X-User-Id` — handy if Laravel reports "user X got a weird answer" and
     someone needs to see that user's actual thread).
+  - **Usage Metrics** — running totals since the last reset: chat requests, cache hit rate, OpenAI
+    token usage (prompt/completion/embedding, so cost is visible without checking the OpenAI
+    dashboard), average response latency, refusals, and upstream errors, plus a per-day request
+    chart for the last two weeks. Own reset button, separate from the other clear actions.
   - A built-in **Test Chatbot** widget to manually try `/chat` (with custom headers) without needing
     Postman — useful for reproducing a reported issue quickly.
   - One-click resets to clear conversation memory or the answer cache fleet-wide, e.g. right after a

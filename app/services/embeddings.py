@@ -1,6 +1,7 @@
 from openai import OpenAI
 
 from app.config import settings
+from app.services import metrics
 
 _client: OpenAI | None = None
 
@@ -19,6 +20,8 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         model=settings.openai_embedding_model,
         input=texts,
     )
+    if response.usage:
+        metrics.record_embedding_tokens(response.usage.total_tokens)
     return [item.embedding for item in response.data]
 
 

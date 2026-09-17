@@ -17,6 +17,7 @@ from app.services.answer_cache import clear_cache, delete_cached, list_cached, l
 from app.services.conversation_history import clear_all_history
 from app.services.conversation_log import LOG_DIR as CONVERSATIONS_LOG_DIR
 from app.services.conversation_log import clear_conversations, delete_conversation_entry, read_conversations
+from app.services.metrics import get_summary, reset_metrics
 from app.services.miss_log import LOG_DIR as MISSES_LOG_DIR
 from app.services.miss_log import clear_misses, delete_miss, read_misses
 
@@ -81,6 +82,12 @@ DICTIONARY: list[tuple[str, str]] = [
         "How long of a gap, in seconds, before a person's conversation is considered “over” "
         "and the assistant forgets it, starting fresh next time they ask something.",
     ),
+    (
+        "Usage Metrics",
+        "Running totals of how the assistant is being used: chat requests, cache hit rate, token "
+        "consumption (what OpenAI bills you for), and average response time. Counted since the last "
+        "reset, not since the server started.",
+    ),
 ]
 
 # Step-by-step walkthrough for a first-time visitor who has never seen this
@@ -133,6 +140,7 @@ FLASH_MESSAGES: dict[str, str] = {
     "cache_cleared": "Answer cache cleared.",
     "history_cleared": "Conversation history cleared.",
     "conversations_cleared": "Conversation log cleared.",
+    "metrics_cleared": "Usage metrics reset.",
 }
 
 PAGE_CSS = """
@@ -554,6 +562,61 @@ PAGE_CSS = """
   .chat-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem; }
   .chat-input-row { display: flex; gap: 0.6rem; }
   .chat-input-row .text-input { flex: 1; }
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.9rem;
+    margin-bottom: 1rem;
+  }
+  .metric-tile {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    background: #fafbfd;
+  }
+  .metric-tile .metric-value {
+    font-size: 1.4rem;
+    font-weight: 750;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .metric-tile .metric-label {
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 0.15rem;
+  }
+  .metric-sub { font-size: 0.76rem; color: var(--text-muted); margin-top: 0.2rem; }
+  .daily-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.35rem;
+    height: 90px;
+    margin-top: 0.5rem;
+  }
+  .daily-bar-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    height: 100%;
+    min-width: 0;
+  }
+  .daily-bar {
+    width: 100%;
+    max-width: 22px;
+    background: var(--primary);
+    border-radius: 3px 3px 0 0;
+    min-height: 2px;
+  }
+  .daily-bar-label {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    margin-top: 0.3rem;
+    white-space: nowrap;
+  }
 """
 
 
@@ -910,6 +973,58 @@ def _render_top_card(
 """
 
 
+def _render_daily_bars(daily: dict[str, dict]) -> str:
+    if not daily:
+        return "<p class='subtitle' style='margin: 0.5rem 0 0 0;'>No usage recorded yet.</p>"
+    max_requests = max(d["requests"] for d in daily.values()) or 1
+    cols = ""
+    for day, d in daily.items():
+        height_pct = max(4, round(d["requests"] / max_requests * 100))
+        label = day[5:]  # MM-DD
+        cols += f"""
+<div class="daily-bar-col" title="{html.escape(day)}: {d['requests']} requests, {d['total_tokens']} tokens">
+  <div class="daily-bar" style="height: {height_pct}%;"></div>
+  <div class="daily-bar-label">{html.escape(label)}</div>
+</div>"""
+    return f"<div class='daily-bars'>{cols}</div>"
+
+
+def _render_metrics_card(summary: dict) -> str:
+    tiles = [
+        (f"{summary['chat_requests']:,}", "Chat requests"),
+        (f"{summary['cache_hit_rate']:.0f}%", "Cache hit rate"),
+        (f"{summary['total_tokens']:,}", "Total tokens used"),
+        (f"{summary['prompt_tokens']:,}", "Prompt tokens"),
+        (f"{summary['completion_tokens']:,}", "Completion tokens"),
+        (f"{summary['embedding_tokens']:,}", "Embedding tokens"),
+        (f"{summary['avg_latency_ms']:,.0f} ms", "Avg. response time"),
+        (f"{summary['refusals']:,}", "Refusals (\"I don't know\")"),
+        (f"{summary['errors']:,}", "Upstream errors"),
+    ]
+    tiles_html = "".join(
+        f"""<div class="metric-tile">
+  <div class="metric-value">{value}</div>
+  <div class="metric-label">{html.escape(label)}</div>
+</div>"""
+        for value, label in tiles
+    )
+    return f"""
+<div class="card">
+  <div class="card-header">
+    <h2>Usage Metrics</h2>
+    <span class="subtitle">Counted since the last reset - includes both live requests and knowledge re-ingestion</span>
+  </div>
+  <div class="metrics-grid">
+    {tiles_html}
+  </div>
+  <div class="label" style="text-transform: uppercase; font-size: 0.76rem; color: var(--text-muted); letter-spacing: 0.04em; margin-top: 1rem;">
+    Requests per day (last {len(summary['daily'])} days)
+  </div>
+  {_render_daily_bars(summary["daily"])}
+</div>
+"""
+
+
 def _page_head(title: str) -> str:
     return f"<title>{html.escape(title)}</title>\n<style>{PAGE_CSS}</style>"
 
@@ -919,12 +1034,14 @@ def _render_page(
     misses: list[dict],
     cached: list[dict],
     conversations: list[dict],
+    metrics_summary: dict,
     banner: tuple[str, str] | None = None,
 ) -> str:
     total_misses = len(misses)
     total_cached = len(cached)
     total_conversations = len(conversations)
     rows = _render_config_rows(config)
+    metrics_card = _render_metrics_card(metrics_summary)
     miss_rows = _render_miss_rows(misses[:PREVIEW_COUNT], "/admin")
     cache_rows = _render_cache_rows(cached[:PREVIEW_COUNT], "/admin")
     conversation_rows = _render_conversation_rows(conversations[:PREVIEW_COUNT], "/admin")
@@ -988,6 +1105,7 @@ def _render_page(
       <span class="stat-pill"><strong>{total_misses}</strong> knowledge gaps</span>
       <span class="stat-pill"><strong>{total_cached}</strong> cached answers</span>
       <span class="stat-pill"><strong>{total_conversations}</strong> conversations logged</span>
+      <span class="stat-pill"><strong>{metrics_summary['total_tokens']:,}</strong> tokens used</span>
     </div>
   </div>
 </header>
@@ -997,6 +1115,8 @@ def _render_page(
 <div class="main-col">
 
 {chatbox_html}
+
+{metrics_card}
 
 <div class="card">
   <div class="card-header">
@@ -1034,6 +1154,16 @@ def _render_page(
     </p>
     <form method="post" action="/admin/history/clear">
       <button type="submit" class="btn btn-outline-danger">Clear all conversation history</button>
+    </form>
+  </div>
+  <div class="danger-zone">
+    <div class="label">Usage metrics</div>
+    <p class="subtitle" style="margin: 0 0 0.6rem 0;">
+      Resets every counter above (requests, tokens, cache hit rate, latency) back to zero. Doesn't
+      affect knowledge gaps, cached answers, or the conversation log.
+    </p>
+    <form method="post" action="/admin/metrics/clear">
+      <button type="submit" class="btn btn-outline-danger">Reset usage metrics</button>
     </form>
   </div>
 </div>
@@ -1141,6 +1271,7 @@ def admin_page(request: Request, _: None = Depends(require_admin)) -> str:
         read_misses(),
         list_cached(),
         read_conversations(),
+        get_summary(),
         banner=_banner_from_query(request),
     )
 
@@ -1308,3 +1439,9 @@ async def admin_clear_conversations(request: Request, _: None = Depends(require_
     form = await request.form()
     clear_conversations()
     return _admin_redirect(str(form.get("next", "/admin")), msg_key="conversations_cleared")
+
+
+@router.post("/admin/metrics/clear")
+async def admin_clear_metrics(_: None = Depends(require_admin)) -> RedirectResponse:
+    reset_metrics()
+    return _admin_redirect(msg_key="metrics_cleared")

@@ -10,6 +10,7 @@ from app.services.answer_cache import lookup, store
 from app.services.conversation_history import append_turn, get_history
 from app.services.conversation_log import log_turn
 from app.services.generation import ERROR_CONTEXT_MAX_TOKENS, FALLBACK_ERROR, REFUSAL, generate_answer
+from app.services import metrics
 from app.services.miss_log import log_miss
 from app.services.rate_limit import check_rate_limit
 from app.services.retrieval import retrieve
@@ -67,6 +68,8 @@ def chat(
             detail=f"Too many requests. Try again in {wait_seconds} {unit}.",
         )
 
+    metrics.record_chat_request()
+
     history = get_history(x_user_id, cfg["history_ttl_seconds"]) if cfg["history_enabled"] else []
 
     # Cache only applies to the first turn of a conversation - follow-ups are
@@ -81,6 +84,7 @@ def chat(
             cached = None
         if cached is not None:
             answer, sources = cached
+            metrics.record_cache_hit()
             if cfg["history_enabled"]:
                 append_turn(x_user_id, question, answer, cfg["history_ttl_seconds"], cfg["history_max_turns"])
             if cfg["conversation_log_enabled"]:
@@ -96,6 +100,7 @@ def chat(
         )
     except Exception:
         logger.exception("retrieval failed for question=%r", question)
+        metrics.record_error()
         return ChatResponse(answer=FALLBACK_ERROR, sources=[])
 
     try:
@@ -109,9 +114,11 @@ def chat(
         )
     except openai.OpenAIError:
         logger.exception("OpenAI call failed for question=%r", question)
+        metrics.record_error()
         return ChatResponse(answer=FALLBACK_ERROR, sources=[])
     except Exception:
         logger.exception("generation failed for question=%r", question)
+        metrics.record_error()
         return ChatResponse(answer=FALLBACK_ERROR, sources=[])
 
     sources = sorted({c.source for c in chunks})

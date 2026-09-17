@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,6 +37,7 @@ def main() -> None:
         log_dir = Path(tmp) / "logs"
         log_path = log_dir / "missed_questions.jsonl"
         conversations_log_path = log_dir / "conversations.jsonl"
+        metrics_path = log_dir / "metrics.json"
 
         # Fake Qdrant-backed answer cache so admin tests don't need live Qdrant.
         fake_cache: list[dict] = []
@@ -51,23 +53,24 @@ def main() -> None:
         def fake_clear_cache() -> None:
             fake_cache.clear()
 
-        with (
-            patch("app.runtime_config.CONFIG_PATH", config_path),
-            patch("app.services.miss_log.LOG_DIR", log_dir),
-            patch("app.services.miss_log.LOG_PATH", log_path),
-            patch("app.services.conversation_log.LOG_DIR", log_dir),
-            patch("app.services.conversation_log.LOG_PATH", conversations_log_path),
-            patch("app.services.rate_limit._last_request", {}),
-            patch("app.services.conversation_history._history", {}),
-            patch("app.api.chat.lookup", return_value=None),
-            patch("app.api.chat.store"),
-            patch("app.api.admin.list_cached", side_effect=fake_list_cached),
-            patch("app.api.admin.delete_cached", side_effect=fake_delete_cached),
-            patch("app.api.admin.clear_cache", side_effect=fake_clear_cache),
-            patch.object(settings, "admin_password", "test-pass"),
-            patch.object(settings, "admin_username", "admin"),
-            patch.object(settings, "chat_shared_secret", ""),
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(patch("app.runtime_config.CONFIG_PATH", config_path))
+            stack.enter_context(patch("app.services.miss_log.LOG_DIR", log_dir))
+            stack.enter_context(patch("app.services.miss_log.LOG_PATH", log_path))
+            stack.enter_context(patch("app.services.conversation_log.LOG_DIR", log_dir))
+            stack.enter_context(patch("app.services.conversation_log.LOG_PATH", conversations_log_path))
+            stack.enter_context(patch("app.services.metrics.METRICS_PATH", metrics_path))
+            stack.enter_context(patch("app.services.rate_limit._last_request", {}))
+            stack.enter_context(patch("app.services.conversation_history._history", {}))
+            stack.enter_context(patch("app.api.chat.lookup", return_value=None))
+            stack.enter_context(patch("app.api.chat.store"))
+            stack.enter_context(patch("app.api.admin.list_cached", side_effect=fake_list_cached))
+            stack.enter_context(patch("app.api.admin.delete_cached", side_effect=fake_delete_cached))
+            stack.enter_context(patch("app.api.admin.clear_cache", side_effect=fake_clear_cache))
+            stack.enter_context(patch.object(settings, "admin_password", "test-pass"))
+            stack.enter_context(patch.object(settings, "admin_username", "admin"))
+            stack.enter_context(patch.object(settings, "chat_shared_secret", ""))
+
             from app.main import app
 
             client = TestClient(app)

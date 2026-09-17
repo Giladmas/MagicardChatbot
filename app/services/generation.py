@@ -1,8 +1,10 @@
 import difflib
 import re
+import time
 
 from app.config import settings
 from app.runtime_config import DEFAULTS
+from app.services import metrics
 from app.services.conversation_history import Turn
 from app.services.embeddings import get_openai_client
 from app.services.retrieval import RetrievedChunk
@@ -142,17 +144,27 @@ def generate_answer(
         messages.append({"role": "assistant", "content": turn.answer})
     messages.append({"role": "user", "content": user_message})
 
+    start = time.monotonic()
     response = get_openai_client().chat.completions.create(
         model=settings.openai_chat_model,
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
     )
+    latency_ms = (time.monotonic() - start) * 1000
     answer = response.choices[0].message.content.strip()
 
     # Hard guarantee independent of prompt compliance: chat.py's cache/miss-log
     # logic depends on an exact REFUSAL match, so never let a stray callback or
     # other prefix/suffix around the refusal text break that contract.
     if REFUSAL in answer and answer != REFUSAL:
-        return REFUSAL
+        answer = REFUSAL
+
+    usage = response.usage
+    metrics.record_generation(
+        prompt_tokens=usage.prompt_tokens if usage else 0,
+        completion_tokens=usage.completion_tokens if usage else 0,
+        latency_ms=latency_ms,
+        refusal=(answer == REFUSAL),
+    )
     return answer
