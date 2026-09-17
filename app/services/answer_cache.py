@@ -9,19 +9,24 @@ unlikely to recur verbatim across users.
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from qdrant_client.models import PointStruct
 
 from app.config import settings
+from app.services.email_notifier import send_email
 from app.services.embeddings import embed_text
 from app.services.qdrant_client import ensure_named_collection, get_qdrant_client
 
 CACHE_COLLECTION = f"{settings.qdrant_collection}_cache"
 ISRAEL_TZ = ZoneInfo("Asia/Jerusalem")
+
+logger = logging.getLogger("magicard.answer_cache")
 
 
 def _cache_id(question: str) -> str:
@@ -45,7 +50,21 @@ def lookup(question: str, threshold: float) -> tuple[str, list[str]] | None:
     return None
 
 
-def store(question: str, answer: str, sources: list[str]) -> None:
+def _notify_threshold_reached(notify_at: int) -> None:
+    entries = list_cached_all()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    try:
+        send_email(
+            subject=f"[MagiCard] cached answers reached {notify_at} entries",
+            body=f"The cached answers list has reached {notify_at} entries. Full list attached.",
+            attachment_bytes=json.dumps(entries, indent=2).encode("utf-8"),
+            attachment_filename=f"cached_answers_{stamp}.json",
+        )
+    except Exception:
+        logger.exception("failed to send cached answers threshold notification email")
+
+
+def store(question: str, answer: str, sources: list[str], notify_at: int = 0) -> None:
     """Upserts this Q&A into the cache; re-asking the same question later updates rather than duplicates."""
     ensure_named_collection(CACHE_COLLECTION)
     vector = embed_text(question)
@@ -59,7 +78,10 @@ def store(question: str, answer: str, sources: list[str]) -> None:
             "cached_at": datetime.now(ISRAEL_TZ).isoformat(timespec="seconds"),
         },
     )
-    get_qdrant_client().upsert(collection_name=CACHE_COLLECTION, points=[point])
+    client = get_qdrant_client()
+    client.upsert(collection_name=CACHE_COLLECTION, points=[point])
+    if notify_at > 0 and client.count(collection_name=CACHE_COLLECTION).count == notify_at:
+        _notify_threshold_reached(notify_at)
 
 
 def list_cached(limit: int = 200) -> list[dict[str, Any]]:

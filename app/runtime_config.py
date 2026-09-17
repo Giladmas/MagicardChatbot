@@ -23,14 +23,15 @@ DEFAULTS: dict[str, Any] = {
     "rate_limit_seconds": 10,
     "retrieval_top_k": 4,
     "temperature": 0.2,
-    "knowledge_gaps_rotate_at": 200,
+    "knowledge_gaps_rotate_at": 100,
     "history_enabled": True,
     "history_max_turns": 6,
     "history_ttl_seconds": 1800,
     "cache_enabled": True,
     "cache_similarity_threshold": 0.95,
+    "cache_notify_at": 100,
     "conversation_log_enabled": True,
-    "conversations_rotate_at": 1000,
+    "conversations_rotate_at": 100,
 }
 
 # Unit/range hints for the admin page - purely descriptive, not enforced here.
@@ -48,6 +49,7 @@ CONFIG_HELP: dict[str, str] = {
     "history_ttl_seconds": "seconds of inactivity before a conversation resets",
     "cache_enabled": "on/off",
     "cache_similarity_threshold": "cosine similarity, 0.0-1.0 (higher = stricter match)",
+    "cache_notify_at": "cached entries before a notification email is sent",
     "conversation_log_enabled": "on/off - saves a viewable record of chats, separate from GPT's own memory",
     "conversations_rotate_at": "lines before the conversation log rotates",
 }

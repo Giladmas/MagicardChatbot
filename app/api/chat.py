@@ -133,7 +133,7 @@ def chat(
         log_miss(question, rotate_at=cfg["knowledge_gaps_rotate_at"])
     elif cfg["cache_enabled"] and not history and not body.context:
         try:
-            store(question, answer, sources)
+            store(question, answer, sources, notify_at=cfg["cache_notify_at"])
         except Exception:
             logger.exception("cache store failed for question=%r", question)
 

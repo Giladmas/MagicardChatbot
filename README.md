@@ -231,16 +231,21 @@ Some values are meant to be tuned without a redeploy:
 | `rate_limit_seconds` | 10 | Minimum gap between requests from the same `X-User-Id`. |
 | `retrieval_top_k` | 4 | How many chunks Qdrant returns per question. |
 | `temperature` | 0.2 | GPT sampling temperature — 0 is deterministic/literal; raise it for more varied phrasing. |
-| `knowledge_gaps_rotate_at` | 200 | Once `logs/missed_questions.jsonl` reaches this many lines, it's archived and a fresh file starts (see **Knowledge Gaps**, below). |
+| `knowledge_gaps_rotate_at` | 100 | Once `logs/missed_questions.jsonl` reaches this many lines, it's archived, a fresh file starts, and a notification email with the full list attached is sent to `NOTIFY_EMAIL` (see **Knowledge Gaps**, below, and **Email notifications**). |
 | `history_enabled` | true | Turns conversation memory on/off entirely. |
 | `history_max_turns` | 6 | Max prior turns replayed to GPT per user; oldest dropped first. |
 | `history_ttl_seconds` | 1800 | Inactivity window before a user's conversation resets (30 min). |
 | `cache_enabled` | true | Turns the semantic answer cache on/off entirely. |
 | `cache_similarity_threshold` | 0.95 | Minimum cosine similarity for a cache hit — lower catches more paraphrases but risks a wrong-answer match; raise it if you see bad cache hits. |
+| `cache_notify_at` | 100 | Once the answer cache reaches this many entries, a notification email with the full cache attached is sent to `NOTIFY_EMAIL`. The cache itself isn't rotated/capped — this is notification-only. |
 | `conversation_log_enabled` | true | Turns the saved, admin-viewable conversation log on/off entirely (independent of `history_enabled`). |
-| `conversations_rotate_at` | 1000 | Once `logs/conversations.jsonl` reaches this many lines, it's archived and a fresh file starts. |
+| `conversations_rotate_at` | 100 | Once `logs/conversations.jsonl` reaches this many lines, it's archived, a fresh file starts, and a notification email with the full list attached is sent to `NOTIFY_EMAIL`. |
 
 These live in `runtime_config.json` at the project root (auto-created with defaults from `app/runtime_config.py` on first read; gitignored since it's runtime state, not source).
+
+### Email notifications
+
+Whenever conversations, the answer cache, or knowledge gaps reaches its configured threshold above, a notification email is sent to `NOTIFY_EMAIL` with the full list attached as JSON (`app/services/email_notifier.py`). Configure outgoing mail via `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` in `.env` — leave `SMTP_HOST` blank to disable emails entirely (a warning is logged, `/chat` is unaffected). Sending failures are caught and logged, never surfaced to the caller.
 
 Change them live via the admin panel below (bool settings render as a checkbox, everything else as a text field), or by editing/creating `runtime_config.json` directly and restarting the server (defaults are only used for keys the file doesn't have — a hand-edited partial file is fine).
 

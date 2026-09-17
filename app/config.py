@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = ""
 
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    notify_email: str = "gilad@masteruno.com"
+
 
 settings = Settings()
 

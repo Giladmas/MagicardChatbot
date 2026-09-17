@@ -12,15 +12,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.services.email_notifier import send_email
+
 LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
 LOG_PATH = LOG_DIR / "missed_questions.jsonl"
 ISRAEL_TZ = ZoneInfo("Asia/Jerusalem")
+
+logger = logging.getLogger("magicard.miss_log")
 
 _lock = threading.Lock()
 
@@ -36,6 +41,20 @@ def _line_count(path: Path) -> int:
         return sum(1 for line in f if line.strip())
 
 
+def _notify_threshold_reached(rotate_at: int) -> None:
+    entries = _read_all_entries()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    try:
+        send_email(
+            subject=f"[MagiCard] knowledge gaps log reached {rotate_at} entries",
+            body=f"The knowledge gaps list has reached {rotate_at} entries. Full list attached.",
+            attachment_bytes=json.dumps(entries, indent=2).encode("utf-8"),
+            attachment_filename=f"missed_questions_{stamp}.json",
+        )
+    except Exception:
+        logger.exception("failed to send knowledge gaps threshold notification email")
+
+
 def log_miss(question: str, rotate_at: int = 200) -> None:
     timestamp = datetime.now(ISRAEL_TZ).isoformat(timespec="seconds")
     entry = {"id": _entry_id(timestamp, question), "timestamp": timestamp, "question": question}
@@ -46,6 +65,9 @@ def log_miss(question: str, rotate_at: int = 200) -> None:
             LOG_PATH.rename(LOG_DIR / f"missed_questions_{stamp}.jsonl")
         with LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
+        notify = rotate_at > 0 and _line_count(LOG_PATH) == rotate_at
+    if notify:
+        _notify_threshold_reached(rotate_at)
 
 
 def _read_all_entries() -> list[dict[str, Any]]:

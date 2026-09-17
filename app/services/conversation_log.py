@@ -14,15 +14,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.services.email_notifier import send_email
+
 LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
 LOG_PATH = LOG_DIR / "conversations.jsonl"
 ISRAEL_TZ = ZoneInfo("Asia/Jerusalem")
+
+logger = logging.getLogger("magicard.conversation_log")
 
 _lock = threading.Lock()
 
@@ -36,6 +41,20 @@ def _line_count(path: Path) -> int:
         return 0
     with path.open("r", encoding="utf-8") as f:
         return sum(1 for line in f if line.strip())
+
+
+def _notify_threshold_reached(rotate_at: int) -> None:
+    entries = _read_all_entries()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    try:
+        send_email(
+            subject=f"[MagiCard] conversations log reached {rotate_at} entries",
+            body=f"The conversations list has reached {rotate_at} entries. Full list attached.",
+            attachment_bytes=json.dumps(entries, indent=2).encode("utf-8"),
+            attachment_filename=f"conversations_{stamp}.json",
+        )
+    except Exception:
+        logger.exception("failed to send conversations threshold notification email")
 
 
 def log_turn(user_id: str, question: str, answer: str, rotate_at: int = 1000) -> None:
@@ -54,6 +73,9 @@ def log_turn(user_id: str, question: str, answer: str, rotate_at: int = 1000) ->
             LOG_PATH.rename(LOG_DIR / f"conversations_{stamp}.jsonl")
         with LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
+        notify = rotate_at > 0 and _line_count(LOG_PATH) == rotate_at
+    if notify:
+        _notify_threshold_reached(rotate_at)
 
 
 def _read_all_entries() -> list[dict[str, Any]]:
