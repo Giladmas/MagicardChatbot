@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from app.config import settings
+from app.errors import RateLimitExceeded
 from app.runtime_config import get_config
 from app.services.answer_cache import lookup, store
 from app.services.clear_limit import check_and_record_clear
@@ -72,9 +73,9 @@ def chat(
     wait_seconds = check_rate_limit(x_user_id, cfg["rate_limit_seconds"])
     if wait_seconds is not None:
         unit = "second" if wait_seconds == 1 else "seconds"
-        raise HTTPException(
-            status_code=429,
+        raise RateLimitExceeded(
             detail=f"Too many requests. Try again in {wait_seconds} {unit}.",
+            retry_after_seconds=wait_seconds,
         )
 
     metrics.record_chat_request()
@@ -177,12 +178,12 @@ def clear_conversation(
 
     if not result.allowed:
         unit = "second" if result.retry_after == 1 else "seconds"
-        raise HTTPException(
-            status_code=429,
+        raise RateLimitExceeded(
             detail=(
                 f"You can only clear the conversation {limit} time{'s' if limit != 1 else ''} "
                 f"per {window_desc}. Try again in {result.retry_after} {unit}."
             ),
+            retry_after_seconds=result.retry_after,
         )
 
     clear_user_history(x_user_id)

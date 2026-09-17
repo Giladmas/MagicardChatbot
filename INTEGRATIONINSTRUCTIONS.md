@@ -102,11 +102,13 @@ to clear, `X-Chat-Secret` is required only if the chatbot has `CHAT_SHARED_SECRE
 ### Response — limit reached (`429`)
 
 ```json
-{"detail": "You can only clear the conversation 3 times per 10 minutes. Try again in 542 seconds."}
+{"detail": "You can only clear the conversation 3 times per 10 minutes. Try again in 542 seconds.", "retry_after_seconds": 542}
 ```
 
 Same shape as the `/chat` rate-limit response — `detail` is already phrased for end users, show it
-directly or build your own countdown UI around it.
+directly, and `retry_after_seconds` is the same wait time as a plain integer, for driving an accurate
+countdown without parsing the English sentence (see section 5 below). The response also carries a
+standard `Retry-After` header set to the same value, if you'd rather read it from there.
 
 **This is a per-user sliding-window limit, not a simple cooldown** — e.g. with the default of 3 per
 10 minutes, a user can clear 3 times back-to-back, but the 4th attempt is rejected until enough time
@@ -167,7 +169,7 @@ configurable window, default 30 minutes), attach it as `context` on the request:
 |---|---|---|---|
 | Question max length | 20 words | Server-side (`max_question_words`, live-configurable) | `400 {"detail": "question is too long (N words, max 20)"}` |
 | Question non-empty | — | Server-side | `400 {"detail": "question must not be empty"}` |
-| Rate limit | 1 request per 10s per `X-User-Id` | Server-side (`rate_limit_seconds`, live-configurable) | `429 {"detail": "Too many requests. Try again in N seconds."}` (N is a whole number) |
+| Rate limit | 1 request per 10s per `X-User-Id` | Server-side (`rate_limit_seconds`, live-configurable) | `429 {"detail": "Too many requests. Try again in N seconds.", "retry_after_seconds": N}` (N is a whole number, also echoed in a `Retry-After` header) |
 | `X-User-Id` present | — | Server-side | `400 {"detail": "X-User-Id header is required"}` |
 | `X-Chat-Secret` correct | — (only if configured) | Server-side | `401 {"detail": "Invalid or missing shared secret"}` |
 
@@ -214,7 +216,7 @@ answer is never reused across users.
 | `200` with the fallback error string (`"Sorry, I'm having trouble answering right now. Please try again shortly."`) | OpenAI or Qdrant failed upstream (timeout, outage, quota) | Display it like a normal message — it already reads as a graceful apology. Optionally detect this exact string to trigger a "retry" button, since it may be transient. |
 | `400` | Bad request (empty question, question too long, missing `X-User-Id`) | These indicate a bug in Laravel's request-building (should be prevented client-side per section 4), not something to show the end user verbatim — surface a generic "something went wrong" and log the `detail` for debugging. |
 | `401` | Missing/wrong `X-Chat-Secret` | Configuration problem, not a user-facing case — should never happen in production if the secret is set correctly. Alert/log loudly if seen. |
-| `429` | Rate limited | Show `detail` directly to the user (it's already phrased for end users, e.g. "Too many requests. Try again in 5 seconds.") or build your own UI around it (e.g. disable the send button for that many seconds). |
+| `429` | Rate limited (applies to both `/chat` and `/chat/clear`) | Show `detail` directly to the user (it's already phrased for end users, e.g. "Too many requests. Try again in 5 seconds.") or, for an accurate countdown/disabled-button timer, use the structured `retry_after_seconds` integer field (also echoed in a `Retry-After` header) instead of parsing that sentence. |
 | Network error / timeout / non-JSON response | The chatbot service itself is unreachable | Not something the chatbot API can help with — this is Laravel needing its own HTTP client timeout + retry/circuit-breaker handling. Recommend a request timeout of ~15-20s (OpenAI generation can occasionally be slow) and treating a timeout the same as a `200` fallback-error case in the UI. |
 
 Two distinct "I can't help" strings exist (**refusal** vs **fallback error**) — they mean different
@@ -255,7 +257,10 @@ $response = Http::withHeaders([
 ])->timeout(20)->post(config('services.magicard_chatbot.url') . '/chat', $payload);
 
 if ($response->status() === 429) {
-    return response()->json(['error' => $response->json('detail')], 429);
+    return response()->json([
+        'error' => $response->json('detail'),
+        'retry_after_seconds' => $response->json('retry_after_seconds'),
+    ], 429);
 }
 
 if (!$response->successful()) {
@@ -280,7 +285,12 @@ $response = Http::withHeaders([
 if ($response->status() === 429) {
     // Limit reached - detail is already end-user-phrased, e.g.
     // "You can only clear the conversation 3 times per 10 minutes. Try again in 542 seconds."
-    return response()->json(['error' => $response->json('detail')], 429);
+    // retry_after_seconds is the same wait as a plain integer, for an accurate countdown/disabled
+    // button without parsing that sentence.
+    return response()->json([
+        'error' => $response->json('detail'),
+        'retry_after_seconds' => $response->json('retry_after_seconds'),
+    ], 429);
 }
 
 if (!$response->successful()) {
