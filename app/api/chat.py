@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from app.config import settings
 from app.runtime_config import get_config
 from app.services.answer_cache import lookup, store
-from app.services.conversation_history import append_turn, get_history
+from app.services.clear_limit import check_and_record_clear
+from app.services.conversation_history import append_turn, clear_user_history, get_history
 from app.services.conversation_log import log_turn
 from app.services.generation import ERROR_CONTEXT_MAX_TOKENS, FALLBACK_ERROR, REFUSAL, generate_answer
 from app.services import metrics
@@ -17,6 +18,14 @@ from app.services.retrieval import retrieve
 
 router = APIRouter()
 logger = logging.getLogger("magicard.chat")
+
+
+class ClearConversationResponse(BaseModel):
+    cleared: bool
+    message: str
+    limit: int
+    window_seconds: int
+    remaining: int
 
 
 class ChatContext(BaseModel):
@@ -138,3 +147,54 @@ def chat(
             logger.exception("cache store failed for question=%r", question)
 
     return ChatResponse(answer=answer, sources=sources)
+
+
+def _describe_window(seconds: float) -> str:
+    seconds = int(seconds)
+    if seconds < 60 or seconds % 60 != 0:
+        return f"{seconds} second{'s' if seconds != 1 else ''}"
+    minutes = seconds // 60
+    return f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+
+@router.post("/chat/clear", response_model=ClearConversationResponse)
+def clear_conversation(
+    x_chat_secret: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None),
+) -> ClearConversationResponse:
+    if settings.chat_shared_secret and x_chat_secret != settings.chat_shared_secret:
+        raise HTTPException(status_code=401, detail="Invalid or missing shared secret")
+
+    if not x_user_id:
+        raise HTTPException(status_code=400, detail="X-User-Id header is required")
+
+    cfg = get_config()
+    limit = cfg["clear_conversation_limit"]
+    window_seconds = cfg["clear_conversation_window_seconds"]
+    window_desc = _describe_window(window_seconds)
+
+    result = check_and_record_clear(x_user_id, limit, window_seconds)
+
+    if not result.allowed:
+        unit = "second" if result.retry_after == 1 else "seconds"
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"You can only clear the conversation {limit} time{'s' if limit != 1 else ''} "
+                f"per {window_desc}. Try again in {result.retry_after} {unit}."
+            ),
+        )
+
+    clear_user_history(x_user_id)
+
+    return ClearConversationResponse(
+        cleared=True,
+        message=(
+            f"Conversation cleared. You can clear it {result.remaining} more "
+            f"time{'s' if result.remaining != 1 else ''} in the next {window_desc} "
+            f"(limit: {limit} per {window_desc})."
+        ),
+        limit=limit,
+        window_seconds=int(window_seconds),
+        remaining=result.remaining,
+    )

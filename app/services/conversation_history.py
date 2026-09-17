@@ -69,3 +69,9 @@ def clear_all_history() -> None:
     """Wipes every user's conversation history. Used by the admin "Clear history" action."""
     with _lock:
         _history.clear()
+
+
+def clear_user_history(user_id: str) -> None:
+    """Wipes one user's conversation history. Used by the end-user "Clear conversation" action."""
+    with _lock:
+        _history.pop(user_id, None)

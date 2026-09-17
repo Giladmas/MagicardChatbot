@@ -32,6 +32,8 @@ DEFAULTS: dict[str, Any] = {
     "cache_notify_at": 100,
     "conversation_log_enabled": True,
     "conversations_rotate_at": 100,
+    "clear_conversation_limit": 3,
+    "clear_conversation_window_seconds": 600,
 }
 
 # Unit/range hints for the admin page - purely descriptive, not enforced here.
@@ -52,6 +54,8 @@ CONFIG_HELP: dict[str, str] = {
     "cache_notify_at": "cached entries before a notification email is sent",
     "conversation_log_enabled": "on/off - saves a viewable record of chats, separate from GPT's own memory",
     "conversations_rotate_at": "lines before the conversation log rotates",
+    "clear_conversation_limit": "max times a user can press \"Clear conversation\" within the window below",
+    "clear_conversation_window_seconds": "seconds the clear-conversation limit above is measured over",
 }
 
 _lock = threading.Lock()

@@ -14,6 +14,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from app.config import settings
 from app.runtime_config import CONFIG_HELP, DEFAULTS, get_config, update_config
 from app.services.answer_cache import clear_cache, delete_cached, list_cached, list_cached_all
+from app.services.clear_limit import clear_all as clear_all_clear_limits
 from app.services.conversation_history import clear_all_history
 from app.services.conversation_log import LOG_DIR as CONVERSATIONS_LOG_DIR
 from app.services.conversation_log import clear_conversations, delete_conversation_entry, read_conversations
@@ -61,6 +62,12 @@ DICTIONARY: list[tuple[str, str]] = [
         "Rate Limit",
         "The minimum wait time between two questions from the same person, used to stop spam or "
         "accidental double-submits.",
+    ),
+    (
+        "Clear Conversation Limit",
+        "How many times a single person can press \"Clear conversation\" in their app within the "
+        "time window below, used to stop them from spamming resets. The chatbot API enforces this "
+        "itself and tells the calling app how many clears are left — no Laravel-side counting needed.",
     ),
     (
         "Retrieval / Chunks",
@@ -1193,7 +1200,8 @@ def _render_page(
     <div class="label">Conversation memory</div>
     <p class="subtitle" style="margin: 0 0 0.6rem 0;">
       Forgets every ongoing conversation for every user. Nobody loses their next answer &mdash;
-      their next question is just treated as a fresh start instead of a follow-up.
+      their next question is just treated as a fresh start instead of a follow-up. Also resets
+      everyone's "Clear conversation" usage count back to zero.
     </p>
     <form method="post" action="/admin/history/clear">
       <button type="submit" class="btn btn-outline-danger">Clear all conversation history</button>
@@ -1469,6 +1477,7 @@ async def admin_clear_cache(request: Request, _: None = Depends(require_admin)) 
 @router.post("/admin/history/clear")
 async def admin_clear_history(_: None = Depends(require_admin)) -> RedirectResponse:
     clear_all_history()
+    clear_all_clear_limits()
     return _admin_redirect(msg_key="history_cleared")
 
 

@@ -2,7 +2,7 @@
 
 This document is for the Laravel app that will call this chatbot API. It covers what to send, what
 you'll get back, what can go wrong, and what to know before wiring it up. It assumes the chatbot API
-is already deployed and reachable at some base URL (e.g. `https://chatbot.internal.magicard.com`).
+is already deployed and reachable at `https://chatbot-776741324301.europe-west3.run.app`.
 
 The chatbot itself is a **stateless HTTP API** — Laravel calls it server-to-server for every message,
 there's no session/socket to maintain, and no SDK to install. Plain HTTP works fine.
@@ -60,7 +60,66 @@ Note: **every failure downstream of validation still returns `200`** with a frie
 see **Error philosophy** below. Laravel does not need special handling for OpenAI/Qdrant outages; just
 display `answer` as-is.
 
-## 2. Error context — attaching a recent failure
+## 2. Clearing a conversation: `POST /chat/clear`
+
+If Laravel's UI has a "Clear conversation" button, pressing it in the browser only clears
+Laravel's *own* UI state — it does nothing to the chatbot's server-side memory (see **Conversation
+memory**, below) unless Laravel also calls this endpoint. Call it whenever the user presses that
+button, before/instead of just clearing the UI locally.
+
+### Request
+
+```
+POST /chat/clear
+X-User-Id: <string, required>
+X-Chat-Secret: <string, only if configured>
+```
+
+No body. Same headers/auth as `/chat` (see section 1) — `X-User-Id` identifies whose conversation
+to clear, `X-Chat-Secret` is required only if the chatbot has `CHAT_SHARED_SECRET` configured.
+
+### Response — success (`200`)
+
+```json
+{
+  "cleared": true,
+  "message": "Conversation cleared. You can clear it 2 more times in the next 10 minutes (limit: 3 per 10 minutes).",
+  "limit": 3,
+  "window_seconds": 600,
+  "remaining": 2
+}
+```
+
+- `cleared` — always `true` on `200`.
+- `message` — a ready-to-display, plain-English sentence stating how many clears the user has left
+  and over what window. Safe to show directly, or ignore and build your own UI from `limit` /
+  `window_seconds` / `remaining`.
+- `limit` — max clears allowed per window (live-configurable in `/admin`, default `3`).
+- `window_seconds` — the rolling window, in seconds, that `limit` applies over (default `600` = 10
+  minutes).
+- `remaining` — clears left for this user in the *current* window, after this one was just counted.
+
+### Response — limit reached (`429`)
+
+```json
+{"detail": "You can only clear the conversation 3 times per 10 minutes. Try again in 542 seconds."}
+```
+
+Same shape as the `/chat` rate-limit response — `detail` is already phrased for end users, show it
+directly or build your own countdown UI around it.
+
+**This is a per-user sliding-window limit, not a simple cooldown** — e.g. with the default of 3 per
+10 minutes, a user can clear 3 times back-to-back, but the 4th attempt is rejected until enough time
+has passed for one of the first 3 to fall outside the 10-minute window. Both `limit` and
+`window_seconds` are live-editable from `/admin` (as `clear_conversation_limit` and
+`clear_conversation_window_seconds`) with no redeploy, so — same caveat as section 4 below — don't
+hardcode "3 per 10 minutes" in Laravel; read it from the response instead.
+
+Clearing only wipes that user's server-side conversation memory (see **Conversation memory** below)
+— it has no effect on the Conversation Log (the admin-visible saved record), the answer cache, or
+any other user's conversation.
+
+## 3. Error context — attaching a recent failure
 
 If Laravel's `ChatbotService::ask()` finds the calling user has a recent logged failure
 (currently only the Sudo payment gateway writes to Laravel's `error_logs` table, within a
@@ -102,7 +161,7 @@ configurable window, default 30 minutes), attach it as `context` on the request:
   reference the chatbot draws its explanations from) is in `ERROR_CONTEXT_INTEGRATION.md` in
   the chatbot repo.
 
-## 3. Possible inputs — restrictions to enforce or expect
+## 4. Possible inputs — restrictions to enforce or expect
 
 | Constraint | Default | Where enforced | What happens if violated |
 |---|---|---|---|
@@ -131,21 +190,29 @@ contract above — nothing changes shape, answers may just be more contextually 
 above, occasionally opening with a natural callback like "As I mentioned earlier, ..." if the user
 re-asks something from earlier in the same conversation).
 
+**"Clear conversation" is a Laravel-driven action, not automatic.** The server-side memory above
+only ever resets on its own after the inactivity window, or when Laravel calls `POST /chat/clear`
+(section 2). If Laravel's UI has its own "Clear conversation" button that only clears local UI
+state (e.g. the message list in the browser), the chatbot has no way to know that happened and will
+keep replaying the old context on the next question — this is the bug this section exists to head
+off. Wire that button to call `POST /chat/clear` (server-to-server, same as `/chat`) whenever it's
+pressed, then clear the UI locally.
+
 **Semantic answer cache — also transparent to Laravel.** Repeated or near-identical standalone
 questions (e.g. many different users asking "What is KYC?") may be served from a cache instead of
 re-running the full AI pipeline — same request/response shape, just potentially faster. No action
 needed on Laravel's side; mentioned here only so a "why was that answer instant" question has an
-answer. Requests carrying `context` (see section 2) always skip the cache, so a context-grounded
+answer. Requests carrying `context` (see section 3) always skip the cache, so a context-grounded
 answer is never reused across users.
 
-## 4. Possible outputs — what your UI needs to handle
+## 5. Possible outputs — what your UI needs to handle
 
 | Status | Meaning | Laravel should... |
 |---|---|---|
 | `200` with a real answer | Success | Display `answer`. |
 | `200` with the refusal string (`"I don't have information about that in the Magicard knowledge base."`) | The bot found nothing relevant — this is still `200`, not an error | Display it like a normal message (it's plain English), or optionally detect this exact string and show a custom "want to talk to a human?" CTA instead. The question was automatically logged server-side for the ops team to review, so no action needed from Laravel beyond the UI decision. |
 | `200` with the fallback error string (`"Sorry, I'm having trouble answering right now. Please try again shortly."`) | OpenAI or Qdrant failed upstream (timeout, outage, quota) | Display it like a normal message — it already reads as a graceful apology. Optionally detect this exact string to trigger a "retry" button, since it may be transient. |
-| `400` | Bad request (empty question, question too long, missing `X-User-Id`) | These indicate a bug in Laravel's request-building (should be prevented client-side per section 3), not something to show the end user verbatim — surface a generic "something went wrong" and log the `detail` for debugging. |
+| `400` | Bad request (empty question, question too long, missing `X-User-Id`) | These indicate a bug in Laravel's request-building (should be prevented client-side per section 4), not something to show the end user verbatim — surface a generic "something went wrong" and log the `detail` for debugging. |
 | `401` | Missing/wrong `X-Chat-Secret` | Configuration problem, not a user-facing case — should never happen in production if the secret is set correctly. Alert/log loudly if seen. |
 | `429` | Rate limited | Show `detail` directly to the user (it's already phrased for end users, e.g. "Too many requests. Try again in 5 seconds.") or build your own UI around it (e.g. disable the send button for that many seconds). |
 | Network error / timeout / non-JSON response | The chatbot service itself is unreachable | Not something the chatbot API can help with — this is Laravel needing its own HTTP client timeout + retry/circuit-breaker handling. Recommend a request timeout of ~15-20s (OpenAI generation can occasionally be slow) and treating a timeout the same as a `200` fallback-error case in the UI. |
@@ -154,7 +221,7 @@ Two distinct "I can't help" strings exist (**refusal** vs **fallback error**) �
 things (no matching knowledge vs. an infrastructure failure) and it's worth keeping them visually or
 behaviorally distinct if you build anything smarter than "just print `answer`".
 
-## 5. Error philosophy — why this matters for Laravel's design
+## 6. Error philosophy — why this matters for Laravel's design
 
 By design, `/chat` only returns non-`200` for things **Laravel itself** got wrong (bad input, missing
 auth, rate limit). Anything that goes wrong on the AI/infra side (OpenAI down, Qdrant unreachable,
@@ -167,12 +234,12 @@ message — see `app/api/chat.py`. This means:
   side, since it means something is broken in the integration itself (wrong secret, malformed request,
   or the chatbot service is fully down) — not a routine "AI had a bad day."
 
-## 6. Example Laravel integration (Guzzle)
+## 7. Example Laravel integration (Guzzle)
 
 ```php
 $payload = ['question' => $userMessage];
 
-// Attach recent error context, if any (see section 2) — e.g. from ErrorLog::query()
+// Attach recent error context, if any (see section 3) — e.g. from ErrorLog::query()
 if ($recentError = $this->getRecentError($userId)) {
     $payload['context'] = [
         'provider' => $recentError->provider,
@@ -202,13 +269,40 @@ return response()->json([
 ]);
 ```
 
+Handling the "Clear conversation" button (section 2):
+
+```php
+$response = Http::withHeaders([
+    'X-User-Id' => (string) auth()->id() ?? session()->getId(),
+    'X-Chat-Secret' => config('services.magicard_chatbot.secret'),
+])->timeout(20)->post(config('services.magicard_chatbot.url') . '/chat/clear');
+
+if ($response->status() === 429) {
+    // Limit reached - detail is already end-user-phrased, e.g.
+    // "You can only clear the conversation 3 times per 10 minutes. Try again in 542 seconds."
+    return response()->json(['error' => $response->json('detail')], 429);
+}
+
+if (!$response->successful()) {
+    Log::error('Magicard chatbot clear failed', ['status' => $response->status(), 'body' => $response->body()]);
+    return response()->json(['error' => 'Sorry, something went wrong.'], 500);
+}
+
+// Now safe to also clear Laravel's own UI-facing message history, if any.
+return response()->json([
+    'cleared' => true,
+    'message' => $response->json('message'),
+    'remaining' => $response->json('remaining'),
+]);
+```
+
 Add to Laravel's `config/services.php` / `.env`:
 ```
-MAGICARD_CHATBOT_URL=https://chatbot.internal.magicard.com
+MAGICARD_CHATBOT_URL=https://chatbot-776741324301.europe-west3.run.app
 MAGICARD_CHATBOT_SECRET=   # only if the chatbot's CHAT_SHARED_SECRET is set — get this from whoever deployed it
 ```
 
-## 7. Operational notes worth knowing before going live
+## 8. Operational notes worth knowing before going live
 
 - **Health check**: `GET /health` → `{"status": "ok"}`, no auth required. Point your load balancer /
   uptime monitor at this, not `/chat` (which requires headers and would burn rate-limit/API quota).
@@ -226,7 +320,7 @@ MAGICARD_CHATBOT_SECRET=   # only if the chatbot's CHAT_SHARED_SECRET is set —
   integrates with, but worth bookmarking for whoever owns the Magicard knowledge base or needs to
   investigate a chat issue. It has:
   - Every live-tunable setting (rate limits, question length, retrieval breadth, conversation memory
-    limits, cache threshold, etc.), editable with no redeploy.
+    limits, cache threshold, the `/chat/clear` limit and window, etc.), editable with no redeploy.
   - **Knowledge Gaps** — questions the bot couldn't answer, so "the bot won't answer X" reports have a
     clear next step (add it to `knowledge/`, ask the maintainer to re-ingest).
   - **Cached Answers** and **Conversations** — browsable records of cached answers and real chat
