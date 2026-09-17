@@ -493,6 +493,25 @@ PAGE_CSS = """
     font-size: 0.82rem;
   }
   .col-action { text-align: right; white-space: nowrap; }
+  .clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .clamp.expanded {
+    display: block;
+    -webkit-line-clamp: unset;
+    overflow: visible;
+    white-space: pre-wrap;
+  }
+  .clamp-hint {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    cursor: pointer;
+    user-select: none;
+  }
   .empty-state {
     text-align: center;
     color: var(--text-muted);
@@ -688,9 +707,14 @@ def _render_config_rows(config: dict) -> str:
     return rows
 
 
-def _truncate(text: str, max_len: int = 140) -> str:
-    text = text.strip()
-    return text if len(text) <= max_len else text[: max_len - 1].rstrip() + "…"
+def _clamped_cell(text: str) -> str:
+    """Renders text clamped to 2 lines with a click-to-expand toggle, so nothing is truncated/lost -
+    the full text is always in the DOM, just visually collapsed until clicked."""
+    escaped = html.escape(text.strip())
+    return (
+        f'<span class="clamp" data-clamp-toggle>{escaped}</span>'
+        f'<span class="clamp-hint" data-clamp-toggle>Show more</span>'
+    )
 
 
 def _delete_form(action: str, entry_id: str, next_path: str) -> str:
@@ -710,7 +734,7 @@ def _render_miss_rows(misses: list[dict], next_path: str) -> str:
         rows += f"""
 <tr data-search="{html.escape(search_key)}">
   <td class="col-timestamp">{html.escape(_format_timestamp(m['timestamp']))}</td>
-  <td>{html.escape(m['question'])}</td>
+  <td>{_clamped_cell(m['question'])}</td>
   <td class="col-action">{_delete_form('/admin/misses/delete', m['id'], next_path)}</td>
 </tr>"""
     return rows
@@ -725,8 +749,8 @@ def _render_cache_rows(entries: list[dict], next_path: str) -> str:
         rows += f"""
 <tr data-search="{html.escape(search_key)}">
   <td class="col-timestamp">{html.escape(_format_timestamp(e['cached_at'])) if e['cached_at'] else '—'}</td>
-  <td>{html.escape(_truncate(e['question']))}</td>
-  <td>{html.escape(_truncate(e['answer']))}</td>
+  <td>{_clamped_cell(e['question'])}</td>
+  <td>{_clamped_cell(e['answer'])}</td>
   <td class="col-action">{_delete_form('/admin/cache/delete', e['id'], next_path)}</td>
 </tr>"""
     return rows
@@ -742,8 +766,8 @@ def _render_conversation_rows(entries: list[dict], next_path: str) -> str:
 <tr data-search="{html.escape(search_key)}">
   <td class="col-timestamp">{html.escape(_format_timestamp(e['timestamp']))}</td>
   <td><code>{html.escape(e['user_id'])}</code></td>
-  <td>{html.escape(_truncate(e['question']))}</td>
-  <td>{html.escape(_truncate(e['answer']))}</td>
+  <td>{_clamped_cell(e['question'])}</td>
+  <td>{_clamped_cell(e['answer'])}</td>
   <td class="col-action">{_delete_form('/admin/conversations/delete', e['id'], next_path)}</td>
 </tr>"""
     return rows
@@ -929,6 +953,25 @@ def _search_script() -> str:
     if (countEl) countEl.textContent = q ? ('Showing ' + shown + ' of ' + total) : '';
   }
   search.addEventListener('input', apply);
+})();
+</script>
+"""
+
+
+def _clamp_script() -> str:
+    return """
+<script>
+(function () {
+  document.addEventListener('click', function (ev) {
+    var trigger = ev.target.closest('[data-clamp-toggle]');
+    if (!trigger) return;
+    var cell = trigger.closest('td');
+    if (!cell) return;
+    var clamp = cell.querySelector('.clamp');
+    var hint = cell.querySelector('.clamp-hint');
+    var expanded = clamp.classList.toggle('expanded');
+    if (hint) hint.textContent = expanded ? 'Show less' : 'Show more';
+  });
 })();
 </script>
 """
@@ -1171,6 +1214,7 @@ def _render_page(
 </div>
 {sidebar_html}
 </div>
+{_clamp_script()}
 </body>
 </html>
 """
@@ -1236,6 +1280,7 @@ def _render_full_list_page(
 </div>
 </div>
 {_search_script()}
+{_clamp_script()}
 </body>
 </html>
 """
