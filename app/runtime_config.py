@@ -15,6 +15,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from app.config import settings
+
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "runtime_config.json"
 
 DEFAULTS: dict[str, Any] = {
@@ -39,7 +41,7 @@ DEFAULTS: dict[str, Any] = {
     "chat_input_price_per_1m": 0.15,
     "chat_output_price_per_1m": 0.60,
     "embedding_price_per_1m": 0.02,
-    "monthly_budget_usd": 0.0,
+    "monthly_budget_usd": settings.monthly_budget_usd,
 }
 
 # Unit/range hints for the admin page - purely descriptive, not enforced here.

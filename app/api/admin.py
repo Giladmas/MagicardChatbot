@@ -2,6 +2,7 @@ import html
 import io
 import json
 import secrets
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,7 @@ from app.services.conversation_history import clear_all_history
 from app.services.conversation_log import LOG_DIR as CONVERSATIONS_LOG_DIR
 from app.services.conversation_log import clear_conversations, delete_conversation_entry, read_conversations
 from app.services.metrics import get_summary, reset_metrics
+from app.services.openai_billing import get_billing
 from app.services.miss_log import LOG_DIR as MISSES_LOG_DIR
 from app.services.miss_log import clear_misses, delete_miss, read_misses
 
@@ -897,6 +899,15 @@ PAGE_CSS = """
     margin-top: 0.3rem;
     white-space: nowrap;
   }
+  .daily-bars.dense { gap: 0.2rem; }
+  .daily-bars.dense .daily-bar-value { display: none; }
+  .setup-steps { font-size: 0.87rem; line-height: 1.55; }
+  .setup-steps p { margin: 0 0 0.5rem 0; color: var(--text-muted); }
+  .setup-steps ol { margin: 0; padding-left: 1.3rem; }
+  .setup-steps li { margin-bottom: 0.35rem; }
+  .setup-steps a, .card-header .subtitle a { color: var(--primary); }
+  .compact-table td, .compact-table th { font-size: 0.82rem; }
+  .compact-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .metrics-footnote {
     font-size: 0.74rem;
     color: var(--text-muted);
@@ -1333,73 +1344,79 @@ def _metric_group(title: str, tiles: list[str], hero: bool = False) -> str:
 </div>"""
 
 
-def _render_budget_bar(s: dict) -> str:
-    if not s["monthly_budget"]:
+def _render_budget_bar(cost_month: float, projected: float, budget: float, source: str) -> str:
+    if not budget:
         return (
-            "<div class='budget-empty'>No monthly budget set &mdash; set "
-            "<code>monthly_budget_usd</code> in Live configuration to see how much is left this month.</div>"
+            "<div class='budget-empty'>No monthly budget set &mdash; set <code>MONTHLY_BUDGET_USD</code> "
+            "(env, survives redeploys) or <code>monthly_budget_usd</code> in Live configuration to see "
+            "how much is left this month.</div>"
         )
-    used_pct = s["budget_used_pct"]
-    projected_pct = _pct_of(s["projected_month"], s["monthly_budget"])
+    used_pct = _pct_of(cost_month, budget)
+    projected_pct = _pct_of(projected, budget)
     tone = "danger" if used_pct >= 90 else "warn" if used_pct >= 70 or projected_pct > 100 else "ok"
-    forecast = f"On track to spend <strong>{_money(s['projected_month'])}</strong> by month end" + (
+    forecast = f"On track to spend <strong>{_money(projected)}</strong> by month end" + (
         " &mdash; <strong>over budget</strong>" if projected_pct > 100 else ""
     )
     return f"""<div class="budget budget-{tone}">
   <div class="budget-head">
-    <span><strong>{_money(s['cost_month'])}</strong> of {_money(s['monthly_budget'])} monthly budget used</span>
-    <span class="budget-left"><strong>{_money(s['budget_remaining'])}</strong> left &middot; {used_pct:.0f}%</span>
+    <span><strong>{_money(cost_month)}</strong> of {_money(budget)} monthly budget used</span>
+    <span class="budget-left"><strong>{_money(max(0.0, budget - cost_month))}</strong> left &middot; {used_pct:.0f}%</span>
   </div>
   <div class="budget-track">
     <div class="budget-fill" style="width: {min(100.0, used_pct):.1f}%;"></div>
     <div class="budget-projection" style="left: {min(100.0, projected_pct):.1f}%;" title="Projected month-end spend"></div>
   </div>
-  <div class="metric-sub">{forecast}</div>
+  <div class="metric-sub">{forecast} &middot; {source}</div>
 </div>"""
 
 
-def _render_daily_chart(daily: dict[str, dict]) -> str:
-    if not any(d["requests"] or d["total_tokens"] for d in daily.values()):
+def _render_daily_chart(
+    daily: dict[str, dict],
+    series: dict[str, tuple[str, object]],
+    chart_id: str,
+    title: str = "Per day",
+) -> str:
+    """Bar chart of `daily` (day -> values), with one switchable tab per series key."""
+    if not any(d[key] for d in daily.values() for key in series):
         return "<p class='subtitle' style='margin: 0.5rem 0 0 0;'>No usage recorded yet.</p>"
-    series = {
-        "requests": ("Answers", lambda v: f"{v:,.0f}"),
-        "total_tokens": ("Tokens", _compact),
-        "cost": ("Cost", _money),
-    }
+    first = next(iter(series))
+    dense = " dense" if len(daily) > 16 else ""
     panels = ""
     for key, (label, fmt) in series.items():
         peak = max(d[key] for d in daily.values()) or 1
         total = sum(d[key] for d in daily.values())
         cols = ""
-        for day, d in daily.items():
+        for i, (day, d) in enumerate(daily.items()):
             height_pct = max(3, round(d[key] / peak * 100)) if d[key] else 0
             value = html.escape(fmt(d[key])) if d[key] else ""
+            # On dense (30-day) charts, label every 5th day so dates stay readable.
+            day_label = html.escape(day[5:]) if not dense or (len(daily) - 1 - i) % 5 == 0 else ""
             cols += f"""
 <div class="daily-bar-col" title="{html.escape(day)}: {html.escape(fmt(d[key]))} {label.lower()}">
   <div class="daily-bar-value">{value}</div>
   <div class="daily-bar" style="height: {height_pct}%;"></div>
-  <div class="daily-bar-label">{html.escape(day[5:])}</div>
+  <div class="daily-bar-label">{day_label}&nbsp;</div>
 </div>"""
-        hidden = "" if key == "requests" else " hidden"
+        hidden = "" if key == first else " hidden"
         panels += f"""<div class="chart-panel" data-series="{key}"{hidden}>
   <div class="chart-total">{html.escape(fmt(total))} {label.lower()} over the last {len(daily)} days</div>
-  <div class="daily-bars">{cols}</div>
+  <div class="daily-bars{dense}">{cols}</div>
 </div>"""
     tabs = "".join(
-        f'<button type="button" class="chart-tab{" active" if key == "requests" else ""}" '
+        f'<button type="button" class="chart-tab{" active" if key == first else ""}" '
         f'data-series="{key}">{label}</button>'
         for key, (label, _) in series.items()
     )
-    return f"""<div class="chart" id="daily-chart">
+    return f"""<div class="chart" id="{chart_id}">
   <div class="chart-head">
-    <div class="metric-group-title" style="margin: 0;">Per day</div>
+    <div class="metric-group-title" style="margin: 0;">{html.escape(title)}</div>
     <div class="chart-tabs">{tabs}</div>
   </div>
   {panels}
 </div>
 <script>
 (function () {{
-  var chart = document.getElementById('daily-chart');
+  var chart = document.getElementById('{chart_id}');
   chart.querySelectorAll('.chart-tab').forEach(function (tab) {{
     tab.addEventListener('click', function () {{
       chart.querySelectorAll('.chart-tab').forEach(function (t) {{ t.classList.toggle('active', t === tab); }});
@@ -1410,7 +1427,108 @@ def _render_daily_chart(daily: dict[str, dict]) -> str:
 </script>"""
 
 
-def _render_metrics_card(s: dict) -> str:
+def _ago(timestamp: float) -> str:
+    minutes = int((time.time() - timestamp) // 60)
+    return "just now" if minutes < 1 else f"{minutes} min ago"
+
+
+def _render_billing_card(billing: dict | None, budget: float) -> str:
+    """Real spend and usage from OpenAI's own Costs/Usage APIs - complete and
+    unaffected by redeploys, unlike the per-server counters below it."""
+    header = """<div class="card-header">
+    <h2>Real Spend &amp; Usage</h2>
+    <span class="subtitle">{subtitle}</span>
+  </div>"""
+    if billing is None:
+        return f"""
+<div class="card">
+  {header.format(subtitle="Straight from OpenAI &mdash; not set up yet")}
+  <div class="setup-steps">
+    <p>The Usage Metrics card below only counts what this server has seen since its last restart or
+    redeploy. To show your <strong>real</strong> OpenAI spend and usage here &mdash; the same numbers as
+    OpenAI's billing page, never reset &mdash; connect an OpenAI Admin key:</p>
+    <ol>
+      <li>Open <a href="https://platform.openai.com/settings/organization/admin-keys" target="_blank" rel="noopener">platform.openai.com &rarr; Organization settings &rarr; Admin keys</a>
+      and create a key (read-only is enough). It starts with <code>sk-admin-</code>.</li>
+      <li>Set it as <code>OPENAI_ADMIN_KEY</code> in <code>.env</code> locally, or as an env var on the Cloud Run service.</li>
+      <li>Optional: set <code>OPENAI_PROJECT_ID</code> (<code>proj_...</code>, from the Projects page) to count only
+      this chatbot if your organization has other projects.</li>
+      <li>Optional: set <code>MONTHLY_BUDGET_USD</code> to track what's left this month.</li>
+    </ol>
+  </div>
+</div>
+"""
+    if not billing["ok"]:
+        return f"""
+<div class="card">
+  {header.format(subtitle="Straight from OpenAI")}
+  <div class="banner banner-error" style="margin: 0;">Couldn't load real usage: {html.escape(billing['error'])}
+  <a href="/admin?refresh_billing=1">Try again</a></div>
+</div>
+"""
+    b = billing
+    scope = f"project {html.escape(b['project_id'])}" if b["project_id"] else "whole organization"
+    subtitle = (f"Straight from OpenAI &middot; {scope} &middot; updated {_ago(b['fetched_at'])} "
+                f"&middot; <a href='/admin?refresh_billing=1'>Refresh</a>")
+
+    spend = _metric_group("Spend", [
+        _metric_tile(_money(b["cost_month"]), "This month",
+                     f"Projected {_money(b['projected_month'])} by month end", tone="accent"),
+        _metric_tile(_money(b["cost_today"]), "Today",
+                     f"Yesterday {_money(b['cost_yesterday'])} &middot; can lag a few hours", tone="accent"),
+        _metric_tile(_money(b["cost_30d"]), "Last 30 days",
+                     f"&asymp; {_money(b['cost_30d'] / 30)} per day", tone="accent"),
+    ], hero=True)
+
+    total_input = b["input_tokens_30d"]
+    usage = _metric_group("Usage · last 30 days", [
+        _metric_tile(f"{b['requests_30d']:,}", "AI requests", "Chat completions sent to OpenAI"),
+        _metric_tile(_compact(total_input), "Prompt tokens",
+                     f"{_pct_of(b['cached_tokens_30d'], total_input):.0f}% served from OpenAI's prompt cache",
+                     tooltip=f"{total_input:,} tokens"),
+        _metric_tile(_compact(b["output_tokens_30d"]), "Answer tokens",
+                     tooltip=f"{b['output_tokens_30d']:,} tokens"),
+        _metric_tile(_compact(b["embedding_tokens_30d"]), "Embedding tokens",
+                     "Question lookups + knowledge ingestion", tooltip=f"{b['embedding_tokens_30d']:,} tokens"),
+    ])
+
+    def answer_cell(m: dict) -> str:
+        # Embedding models only read text, they never write an answer.
+        return f"{m['output_tokens']:,}" if m["kind"] == "chat" else "&mdash;"
+
+    model_rows = "".join(
+        f"<tr><td><code>{html.escape(name)}</code></td><td>{m['kind']}</td>"
+        f"<td class='num'>{m['requests']:,}</td><td class='num'>{m['input_tokens']:,}</td>"
+        f"<td class='num'>{answer_cell(m)}</td></tr>"
+        for name, m in b["models"].items()
+    ) or "<tr><td colspan='5' class='subtitle'>No requests in the last 30 days.</td></tr>"
+    models = f"""<div class="metric-group">
+  <div class="metric-group-title">By model &middot; last 30 days</div>
+  <div class="table-scroll"><table class="compact-table">
+    <tr><th>Model</th><th>Type</th><th class="num">Requests</th><th class="num">Prompt / input tokens</th><th class="num">Answer tokens</th></tr>
+    {model_rows}
+  </table></div>
+</div>"""
+
+    chart = _render_daily_chart(
+        b["daily"],
+        {"cost": ("Cost", _money), "requests": ("Requests", lambda v: f"{v:,.0f}"),
+         "input_tokens": ("Prompt tokens", _compact)},
+        chart_id="billing-chart",
+    )
+    return f"""
+<div class="card">
+  {header.format(subtitle=subtitle)}
+  {spend}
+  {_render_budget_bar(b['cost_month'], b['projected_month'], budget, "from OpenAI's billing data")}
+  {usage}
+  {models}
+  {chart}
+</div>
+"""
+
+
+def _render_metrics_card(s: dict, billing_ok: bool = False) -> str:
     since = ""
     if s["since"]:
         try:
@@ -1419,7 +1537,7 @@ def _render_metrics_card(s: dict) -> str:
             pass
     models = f"{html.escape(s['chat_model'])} &middot; {html.escape(s['embedding_model'])}"
 
-    spend = _metric_group("Spend", [
+    spend = _metric_group("Spend (estimated)", [
         _metric_tile(_money(s["total_cost"]), "Total spent",
                      f"AI answers {_money(s['chat_cost'])} &middot; embeddings {_money(s['embedding_cost'])}",
                      tone="accent"),
@@ -1491,18 +1609,26 @@ def _render_metrics_card(s: dict) -> str:
     ])
 
     prices = s["prices"]
+    # With real OpenAI data available, the budget is tracked in the Real Spend card instead.
+    budget_bar = "" if billing_ok else _render_budget_bar(
+        s["cost_month"], s["projected_month"], s["monthly_budget"], "estimated from this server's counts"
+    )
     return f"""
 <div class="card">
   <div class="card-header">
-    <h2>Usage Metrics</h2>
-    <span class="subtitle">{since}{models}</span>
+    <h2>Usage Metrics &middot; this server</h2>
+    <span class="subtitle">{since}{models} &middot; starts over on every redeploy or restart</span>
   </div>
   {spend}
-  {_render_budget_bar(s)}
+  {budget_bar}
   {traffic}
   {tokens}
   {speed}
-  {_render_daily_chart(s["daily"])}
+  {_render_daily_chart(
+      s["daily"],
+      {"requests": ("Answers", lambda v: f"{v:,.0f}"), "total_tokens": ("Tokens", _compact), "cost": ("Cost", _money)},
+      chart_id="daily-chart",
+  )}
   <p class="metrics-footnote">
     Dollar figures are estimates: token counts &times; ${prices['input']:.2f} / ${prices['output']:.2f} per 1M
     prompt / answer tokens and ${prices['embedding']:.2f} per 1M embedding tokens (edit these in Live
@@ -1561,13 +1687,18 @@ def _render_page(
     cached: list[dict],
     conversations: list[dict],
     metrics_summary: dict,
+    billing: dict | None = None,
     banner: tuple[str, str] | None = None,
 ) -> str:
     total_misses = len(misses)
     total_cached = len(cached)
     total_conversations = len(conversations)
     rows = _render_config_rows(config)
-    metrics_card = _render_metrics_card(metrics_summary)
+    billing_ok = bool(billing and billing["ok"])
+    billing_card = _render_billing_card(billing, config["monthly_budget_usd"])
+    metrics_card = _render_metrics_card(metrics_summary, billing_ok)
+    spent_pill = (f"{_money(billing['cost_month'])} spent this month" if billing_ok
+                  else f"{_money(metrics_summary['total_cost'])} spent (est.)")
     miss_rows = _render_miss_rows(misses[:PREVIEW_COUNT], "/admin")
     cache_rows = _render_cache_rows(cached[:PREVIEW_COUNT], "/admin")
     conversation_rows = _render_conversation_rows(conversations[:PREVIEW_COUNT], "/admin")
@@ -1633,7 +1764,7 @@ def _render_page(
       <span class="stat-pill"><strong>{total_misses}</strong> knowledge gaps</span>
       <span class="stat-pill"><strong>{total_cached}</strong> cached answers</span>
       <span class="stat-pill"><strong>{total_conversations}</strong> conversations logged</span>
-      <span class="stat-pill"><strong>{_money(metrics_summary['total_cost'])}</strong> spent</span>
+      <span class="stat-pill"><strong>{spent_pill}</strong></span>
     </div>
   </div>
 </header>
@@ -1643,6 +1774,8 @@ def _render_page(
 <div class="main-col">
 
 {chatbox_html}
+
+{billing_card}
 
 {metrics_card}
 
@@ -1805,6 +1938,7 @@ def admin_page(request: Request, _: None = Depends(require_admin)) -> str:
         list_cached(),
         read_conversations(),
         get_summary(),
+        get_billing(force_refresh=request.query_params.get("refresh_billing") == "1"),
         banner=_banner_from_query(request),
     )
 

@@ -7,6 +7,13 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_chat_model: str = "gpt-4o-mini"
     openai_embedding_model: str = "text-embedding-3-small"
+    # Optional: an Admin key (sk-admin-...) lets /admin show real spend and usage
+    # from OpenAI's Costs/Usage APIs; the project id limits those to this app.
+    openai_admin_key: str = ""
+    openai_project_id: str = ""
+    # Default for the monthly_budget_usd live setting - set it here too, since
+    # live settings reset on every Cloud Run redeploy.
+    monthly_budget_usd: float = 0.0
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""

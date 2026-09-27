@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import tempfile
 from contextlib import ExitStack
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -115,10 +116,70 @@ def check_metrics() -> None:
     check("money: cents", _money(0.62) == "$0.62")
 
 
+def check_openai_billing() -> None:
+    import httpx
+
+    from app.api.admin import _render_billing_card
+    from app.services import openai_billing
+
+    today = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    seen_auth = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_auth.append(request.headers["Authorization"])
+        path, page = request.url.path, request.url.params.get("page")
+        if path.endswith("/costs"):
+            if page is None:  # first page, then a second one to exercise pagination
+                return httpx.Response(200, json={"data": [{"start_time": today - 86400, "results": [
+                    {"amount": {"value": 1.25, "currency": "usd"}}]}], "has_more": True, "next_page": "p2"})
+            return httpx.Response(200, json={"data": [{"start_time": today, "results": [
+                {"amount": {"value": 0.5, "currency": "usd"}}]}], "has_more": False, "next_page": None})
+        if path.endswith("/usage/completions"):
+            return httpx.Response(200, json={"data": [{"start_time": today, "results": [
+                {"model": "gpt-4o-mini", "input_tokens": 1000, "output_tokens": 100,
+                 "input_cached_tokens": 250, "num_model_requests": 4}]}], "has_more": False})
+        return httpx.Response(200, json={"data": [{"start_time": today, "results": [
+            {"model": "text-embedding-3-small", "input_tokens": 500, "num_model_requests": 6}]}], "has_more": False})
+
+    real_client = httpx.Client
+    fake_client = lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)  # noqa: E731
+    with patch.object(settings, "openai_admin_key", "sk-admin-test"), \
+            patch.object(openai_billing, "_cached", None), \
+            patch("app.services.openai_billing.httpx.Client", side_effect=fake_client):
+        b = openai_billing.get_billing()
+        check("billing: loads", b["ok"])
+        check("billing: sends the admin key", set(seen_auth) == {"Bearer sk-admin-test"})
+        check("billing: follows pagination for costs", abs(b["cost_30d"] - 1.75) < 1e-9)
+        check("billing: today's cost", abs(b["cost_today"] - 0.5) < 1e-9)
+        check("billing: token totals", (b["requests_30d"], b["input_tokens_30d"], b["output_tokens_30d"],
+                                        b["cached_tokens_30d"], b["embedding_tokens_30d"]) == (4, 1000, 100, 250, 500))
+        check("billing: per-model breakdown", set(b["models"]) == {"gpt-4o-mini", "text-embedding-3-small"})
+        calls = len(seen_auth)
+        openai_billing.get_billing()
+        check("billing: cached between page loads", len(seen_auth) == calls)
+        card = _render_billing_card(b, budget=10.0)
+        check("billing card shows real spend", "Real Spend" in card and "$0.50" in card and "gpt-4o-mini" in card)
+
+    def forbidden(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"error": {"message": "nope"}})
+
+    with patch.object(settings, "openai_admin_key", "sk-proj-wrong"), \
+            patch.object(openai_billing, "_cached", None), \
+            patch("app.services.openai_billing.httpx.Client",
+                  side_effect=lambda **kw: real_client(transport=httpx.MockTransport(forbidden), **kw)):
+        b = openai_billing.get_billing()
+        check("billing: wrong key type explained", not b["ok"] and "Admin key" in b["error"])
+
+    with patch.object(settings, "openai_admin_key", ""):
+        check("billing: off without an admin key", openai_billing.get_billing() is None)
+        check("billing card explains setup", "OPENAI_ADMIN_KEY" in _render_billing_card(None, 0.0))
+
+
 def main() -> None:
     check_error_context()
     check_small_talk_detection()
     check_metrics()
+    check_openai_billing()
 
     with tempfile.TemporaryDirectory() as tmp:
         config_path = Path(tmp) / "runtime_config.json"
