@@ -116,11 +116,21 @@ question but no `context` should still work exactly as before (grounded in
 
 ## Scope note
 
-Today only the Sudo payment gateway writes to Laravel's `error_logs` table, so
-`context.provider` will currently only ever be `"sudo"`. Nothing on this side needs to
-change when Laravel adds Stripe/Strowallet/CardyFie later — `context` is already
-provider-agnostic (a free-form `provider` string), so those will just start showing up
-the same way.
+Laravel now records failures from every user money flow, not just Sudo card creation:
+
+- USDT (TRC20) deposits: `action="deposit"`, with the exact user-facing reason (duplicate
+  TxID, invalid hash, no transfer to our address, not confirmed yet, too small after fee…).
+- Any error message shown on add-money, virtual-card, withdraw, transfer or gift-card pages
+  (`action` = `deposit` / `card` / `withdraw` / `transfer` / `gift_card`), captured by a
+  Laravel middleware.
+
+`context` gained an optional **`action`** field (rendered as `failed_action=` in the error
+block) so the model knows *what* failed. Laravel also picks the error by the question's
+topic: "why did my deposit fail?" only ever gets a deposit error; a generic "why did my
+transaction fail?" gets the latest error of any kind. How far back Laravel looks (default
+24h) and whether context is sent at all are set by admins in Laravel's Admin → Error Logs.
+`provider` remains a free-form string (`sudo`, `stripe`, `strowallet`, `cardyfie`,
+`magicard`, …).
 
 ## Sudo Africa API — external endpoints MagicCard calls
 

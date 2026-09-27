@@ -31,7 +31,24 @@ def check(label: str, condition: bool) -> None:
     print(f"[{status}] {label}")
 
 
+def check_error_context() -> None:
+    from app.api.chat import ChatContext, ChatRequest
+    from app.services.generation import _build_error_context
+
+    ctx = ChatContext(action="deposit", provider="sudo", message="This transaction has already been submitted.")
+    block = _build_error_context(ctx)
+    check("error block includes failed_action", "failed_action=deposit" in block)
+    check("error block keeps the message", "already been submitted" in block)
+    check("error block without action has no failed_action",
+          "failed_action" not in _build_error_context(ChatContext(provider="sudo", message="x")))
+
+    req = ChatRequest(question="why did my deposit fail?", context={"action": "deposit", "message": "x", "unknown": 1})
+    check("request accepts context.action (and ignores unknown fields)", req.context.action == "deposit")
+
+
 def main() -> None:
+    check_error_context()
+
     with tempfile.TemporaryDirectory() as tmp:
         config_path = Path(tmp) / "runtime_config.json"
         log_dir = Path(tmp) / "logs"

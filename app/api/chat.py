@@ -30,6 +30,7 @@ class ClearConversationResponse(BaseModel):
 
 
 class ChatContext(BaseModel):
+    action: str | None = None  # what failed: "deposit", "card", "card_buy", "withdraw", ...
     provider: str | None = None
     error_code: str | None = None
     message: str | None = None

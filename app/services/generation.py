@@ -98,6 +98,7 @@ def _build_error_context(ctx) -> str:
     parts = [
         p
         for p in [
+            f"failed_action={ctx.action}" if getattr(ctx, "action", None) else None,
             f"provider={ctx.provider}" if ctx.provider else None,
             f"error_code={ctx.error_code}" if ctx.error_code else None,
             f"message={ctx.message}" if ctx.message else None,
