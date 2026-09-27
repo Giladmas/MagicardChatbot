@@ -21,3 +21,7 @@ If a card transaction is unexpectedly declined, the customer should verify their
 To create a virtual card, the customer goes to the Cards section (found under the Cards icon at the bottom of the home screen) and starts the card creation flow there. Sufficient wallet balance is needed to cover the card creation amount plus the applicable fee before the card can be created.
 
 Each customer can have a maximum of 3 active virtual cards at a time. Once this limit is reached, no additional cards can be created.
+
+Customers must complete identity verification (KYC) before they can create a virtual card.
+
+If creating a virtual card fails, the most common reasons are: identity verification (KYC) has not been completed; the wallet balance does not cover the card creation amount plus the fee (3% + $3); the card creation amount is below the $10 minimum; or the customer already has the maximum of 3 active cards. The customer should check these, then try again. If it still fails, contact Magicard support.
