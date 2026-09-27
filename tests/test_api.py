@@ -46,8 +46,40 @@ def check_error_context() -> None:
     check("request accepts context.action (and ignores unknown fields)", req.context.action == "deposit")
 
 
+def check_small_talk_detection() -> None:
+    from app.services.generation import _small_talk_parts
+
+    social = {
+        "ty it worked, have a nice day and bye": {"thanks", "resolved", "closing"},
+        "Thank you so much for your help, it's working now! Have a great weekend \U0001f60a": {"thanks", "resolved", "closing"},
+        "tysm it finally works \U0001f64f": {"thanks", "resolved"},
+        "no thanks, I'm good": {"closing"},
+        "byeee": {"closing"},
+        "hey how are you?": {"greeting"},
+        "are you a bot?": {"identity"},
+        "that didn't help": {"frustration"},
+        "ok": {"ack"},
+        "hahaha": {"ack"},
+        "\U0001f44d": {"ack"},
+    }
+    for message, parts in social.items():
+        check(f"small talk: {message!a} -> {sorted(parts)}", set(_small_talk_parts(message) or []) == parts)
+
+    for message in [
+        "thanks, and what is the withdrawal fee?",
+        "hi, how do I top up my card?",
+        "that didn't help, my deposit is still missing",
+        "it's not working",
+        "is it working?",
+        "What's the weather like today?",
+        "bye 5",
+    ]:
+        check(f"not small talk: {message!a}", _small_talk_parts(message) is None)
+
+
 def main() -> None:
     check_error_context()
+    check_small_talk_detection()
 
     with tempfile.TemporaryDirectory() as tmp:
         config_path = Path(tmp) / "runtime_config.json"
