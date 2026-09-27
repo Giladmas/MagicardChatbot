@@ -15,14 +15,14 @@ A: We couldn't retrieve account information right now. Please try again later. I
 Q: Why can't I see my account balance?
 A: We couldn't retrieve the balance right now. Please try again shortly. If the problem continues, contact support.
 
-Q: Why did my card funding or withdrawal transfer fail?
-A: The transfer couldn't be completed. Please check the amount and your available balance, then try again. If it still fails, contact support.
+Q: Why did my card funding, top-up, or withdrawal transfer fail?
+A: The transfer couldn't be completed. Please check the amount and make sure your available balance covers it, including any fee (card top-ups cost 3% + $3 and have a $1 minimum), then try again. If it still fails, contact support.
 
 Q: Why did creating my cardholder profile fail?
 A: We couldn't create your cardholder profile. Please make sure the personal and billing information you provided is complete and valid, then try again.
 
 Q: Why did my virtual card creation fail?
-A: We couldn't create your virtual card right now. Please verify that your account and profile requirements are complete and try again. If it continues, contact support.
+A: We couldn't create your virtual card right now. Please check that your identity verification (KYC) is complete, your wallet balance covers the card amount plus the fee (3% + $3), the card amount is at least $10, and you have fewer than 3 active cards, then try again. If it continues, contact support.
 
 Q: Why can't I retrieve my card details?
 A: We couldn't retrieve your card information right now. Please try again later. If the problem continues, contact support.

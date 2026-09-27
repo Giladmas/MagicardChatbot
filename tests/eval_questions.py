@@ -18,6 +18,7 @@ EVAL_QUESTIONS: list[tuple[str, str]] = [
     ("How many cards can I have?", "cards.txt"),
     ("I tried to create a card and it failed", "cards.txt"),
     ("I tried to deposit and it failed", "deposits.txt"),
+    ("I tried to top up my card and it failed", "cards.txt"),
     ("What is KYC?", "kyc.txt"),
     ("My verification is stuck pending, what should I do?", "kyc.txt"),
     ("Should I share my CVV with the chatbot?", "account_security.txt"),

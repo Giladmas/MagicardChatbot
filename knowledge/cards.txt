@@ -24,4 +24,6 @@ Each customer can have a maximum of 3 active virtual cards at a time. Once this 
 
 Customers must complete identity verification (KYC) before they can create a virtual card.
 
-If creating a virtual card fails, the most common reasons are: identity verification (KYC) has not been completed; the wallet balance does not cover the card creation amount plus the fee (3% + $3); the card creation amount is below the $10 minimum; or the customer already has the maximum of 3 active cards. The customer should check these, then try again. If it still fails, contact Magicard support.
+If creating a virtual card fails, shows an error, or the customer can't create a new card, the most common reasons are: identity verification (KYC) has not been completed; the wallet balance does not cover the card creation amount plus the fee (3% + $3); the card creation amount is below the $10 minimum; or the customer already has the maximum of 3 active cards. The customer should check these, then try again. If it still fails, contact Magicard support.
+
+If adding funds to (topping up) a card fails, the most common reasons are: the wallet balance does not cover the top-up amount plus the fee (3% + $3); the top-up amount is below the $1 minimum; or the top-up would take the card above its maximum balance of $1,000,000. The customer should check these, then try again. If it still fails, contact Magicard support.

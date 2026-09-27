@@ -8,14 +8,14 @@ The customer sends USDT to the provided deposit address using the TRC20 network.
 
 After the transaction is confirmed, the deposit is credited to the customer's Magicard USD wallet.
 
-Customers should always verify the network and deposit address before sending cryptocurrency.
+Customers should always verify the network (TRC20) and deposit address before sending cryptocurrency.
 
-Do not send funds using an unsupported network.
+TRC20 is the only supported network for USDT deposits. Do not send funds using any other network.
 
 If a deposit has not appeared after confirmation, the customer should contact Magicard support and provide the transaction hash.
 
 A network funding fee applies to USDT deposits: a flat $1 is deducted, then an additional 1% is deducted from the remainder. For example, sending 100 USDT credits 98.01 USD to the wallet. Deposits of 1 USDT or less do not credit any balance after the fee.
 
-After sending USDT, the customer must submit the transaction hash (TxID) so the deposit can be verified on-chain. Common reasons a submission is rejected: the transaction hash format is invalid, the same transaction hash was already submitted before, no matching USDT transfer to Magicard's deposit address was found in that transaction, or the transaction has not yet confirmed on-chain (the customer should try again shortly in that case).
+After sending USDT, the customer must submit the transaction hash (TxID) so the deposit can be verified on-chain.
 
-If a USDT deposit failed or was rejected, check: the transaction was sent on the TRC20 network to the Magicard deposit address; the transaction hash (TxID) was copied correctly and has not already been submitted; the transaction has confirmed on-chain (if not, wait a few minutes and submit again); and the amount was more than 1 USDT, since deposits of 1 USDT or less credit nothing after the fee. If everything checks out and the deposit still has not been credited, contact Magicard support with the transaction hash.
+If a USDT deposit failed, the transaction hash (TxID) was rejected, or the deposit has not been credited, the most common reasons are: the transaction has not confirmed on-chain yet (wait a few minutes and submit the hash again); the USDT was not sent on the TRC20 network to the Magicard deposit address, so no matching transfer was found; the transaction hash was copied incorrectly (invalid format) or was already submitted before; or the amount was 1 USDT or less, which credits nothing after the fee. The customer should check these, then try again. If it still fails, contact Magicard support with the transaction hash.

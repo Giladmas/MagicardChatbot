@@ -8,6 +8,8 @@ A withdrawal request may require approval before the USDT is sent.
 
 Customers should carefully verify their destination wallet address before confirming a withdrawal.
 
+Withdrawal limits: the minimum withdrawal is $10 and the maximum is $100,000 per transaction, with a fee of 1% + $1. Customers can view their current limits under Tariffs & Limits in Account, at the bottom right of the home screen.
+
 Blockchain transactions cannot normally be reversed after they are sent.
 
 If a withdrawal remains pending or fails, the customer should contact Magicard support.

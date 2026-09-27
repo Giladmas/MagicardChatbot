@@ -147,6 +147,7 @@ Run all of these from the project root with the venv activated (`.venv\Scripts\a
 | `python -m app.knowledge_processing.chunker` | Preview how `knowledge/*.txt` gets split into chunks, without touching Qdrant or OpenAI. Useful when writing a new doc, to sanity-check the split before ingesting. |
 | `python -m tests.test_retrieval` | Runs the golden eval question set (`tests/eval_questions.py`) against Qdrant and reports which questions retrieved a chunk from the expected source file. Run after ingesting, or after editing `knowledge/`, to confirm retrieval quality didn't regress. |
 | `python -m tests.test_chat` | Runs the same golden question set through the full pipeline (retrieve + GPT generation) and reports which answers look right — in-scope questions should get a real (non-refusal) answer, and the out-of-scope question should get the exact refusal string. Run after touching `app/services/generation.py` or the prompt, or after ingesting. |
+| `python -m tests.test_failure_answers` | Runs "I tried X and it failed" questions (card creation, card top-up, USDT deposit, plus one with Laravel error context) through the full pipeline and checks each answer names the actual causes and figures (KYC, balance, $10 minimum, 3 active cards, TRC20, TxID, on-chain confirmation, contact support) rather than a generic reply. Run after editing `knowledge/cards.txt`, `deposits.txt`, `sudo_errors.txt`, or the prompt. |
 | `python -m tests.test_api` | Offline tests for `/chat` and `/admin` — validation, rate limiting, error fallback, missed-question logging, admin auth — all with OpenAI/Qdrant mocked out. No API keys or live services needed; safe to run anytime, e.g. in CI. |
 
 ## Project layout
@@ -182,6 +183,7 @@ This is a **manual** routine — editing or adding a file in `knowledge/` does n
 3. `python -m scripts.ingest` — chunk, embed, and upsert into Qdrant. Idempotent: updates changed chunks, prunes removed ones, safe to re-run anytime. Also clears the semantic answer cache, since cached answers are only valid for the knowledge content they were generated from.
 4. `python -m tests.test_retrieval` — run the golden eval question set against live Qdrant to confirm retrieval quality didn't regress.
 5. `python -m tests.test_chat` — run the same questions through GPT generation to confirm answers still read right. A retrieval regression usually shows up here too (as a wrong or refused answer), so this catches more than step 4 alone.
+6. `python -m tests.test_failure_answers` — if you touched failure/troubleshooting content, confirm those answers still list every cause with exact figures.
 
 ## Calling `/chat`
 
