@@ -13,7 +13,7 @@ def get_openai_client() -> OpenAI:
     return _client
 
 
-def embed_texts(texts: list[str]) -> list[list[float]]:
+def embed_texts(texts: list[str], ingest: bool = False) -> list[list[float]]:
     if not texts:
         return []
     response = get_openai_client().embeddings.create(
@@ -21,7 +21,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         input=texts,
     )
     if response.usage:
-        metrics.record_embedding_tokens(response.usage.total_tokens)
+        metrics.record_embedding_tokens(response.usage.total_tokens, ingest=ingest)
     return [item.embedding for item in response.data]
 
 

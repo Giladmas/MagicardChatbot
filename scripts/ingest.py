@@ -54,7 +54,7 @@ def main() -> None:
     client = get_qdrant_client()
     for start in range(0, len(chunks), BATCH_SIZE):
         batch = chunks[start : start + BATCH_SIZE]
-        vectors = embed_texts([c.text for c in batch])
+        vectors = embed_texts([c.text for c in batch], ingest=True)
         points = [
             PointStruct(
                 id=chunk_id(c.source, c.text),

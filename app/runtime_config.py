@@ -34,6 +34,12 @@ DEFAULTS: dict[str, Any] = {
     "conversations_rotate_at": 100,
     "clear_conversation_limit": 3,
     "clear_conversation_window_seconds": 600,
+    # OpenAI list prices (USD per 1M tokens) for the default gpt-4o-mini /
+    # text-embedding-3-small - update these if the models or prices change.
+    "chat_input_price_per_1m": 0.15,
+    "chat_output_price_per_1m": 0.60,
+    "embedding_price_per_1m": 0.02,
+    "monthly_budget_usd": 0.0,
 }
 
 # Unit/range hints for the admin page - purely descriptive, not enforced here.
@@ -56,6 +62,10 @@ CONFIG_HELP: dict[str, str] = {
     "conversations_rotate_at": "lines before the conversation log rotates",
     "clear_conversation_limit": "max times a user can press \"Clear conversation\" within the window below",
     "clear_conversation_window_seconds": "seconds the clear-conversation limit above is measured over",
+    "chat_input_price_per_1m": "USD per 1M prompt tokens for the chat model - used for the cost figures in Usage Metrics",
+    "chat_output_price_per_1m": "USD per 1M completion tokens for the chat model",
+    "embedding_price_per_1m": "USD per 1M tokens for the embedding model",
+    "monthly_budget_usd": "USD you plan to spend per calendar month - Usage Metrics shows what's left (0 = no budget)",
 }
 
 _lock = threading.Lock()

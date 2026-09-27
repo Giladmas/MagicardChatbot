@@ -91,9 +91,30 @@ DICTIONARY: list[tuple[str, str]] = [
     ),
     (
         "Usage Metrics",
-        "Running totals of how the assistant is being used: chat requests, cache hit rate, token "
-        "consumption (what OpenAI bills you for), and average response time. Counted since the last "
-        "reset, not since the server started.",
+        "Running totals of how the assistant is being used: what it has cost in dollars, chat "
+        "requests, cache hit rate, token consumption (what OpenAI bills you for), and response time. "
+        "Counted since the last reset, not since the server started.",
+    ),
+    (
+        "Prompt vs. Answer Tokens",
+        "Prompt tokens are everything sent to the AI for one question (instructions, knowledge "
+        "chunks, earlier messages); answer tokens are what it writes back. Answer tokens cost about "
+        "4x more each, but prompts are much bigger, so prompts are usually most of the bill.",
+    ),
+    (
+        "Context Window",
+        "The most tokens the AI model can read in one request. If a prompt ever got close to it, "
+        "older conversation turns or knowledge chunks would have to be dropped.",
+    ),
+    (
+        "Monthly Budget",
+        "A spending target you set in Live configuration (monthly_budget_usd). It doesn't block "
+        "anything - it just shows how much of it is used and whether you're on track to exceed it.",
+    ),
+    (
+        "95th Percentile (p95)",
+        "The response time that 95% of answers beat. Better than the average for spotting the slow "
+        "answers customers actually notice.",
     ),
 ]
 
@@ -169,6 +190,7 @@ PAGE_CSS = """
     --error-text: #b3261e;
     --error-border: #f3b6b1;
     --danger: #b3261e;
+    --warn: #b54708;
     --code-bg: #eef1f6;
     --code-text: #33415c;
     --row-hover: #f7f9fc;
@@ -199,6 +221,7 @@ PAGE_CSS = """
     --error-text: #ff9a90;
     --error-border: rgba(255, 154, 144, 0.32);
     --danger: #ff8079;
+    --warn: #fdb022;
     --code-bg: #202942;
     --code-text: #c1cbe6;
     --row-hover: rgba(255, 255, 255, 0.035);
@@ -693,19 +716,40 @@ PAGE_CSS = """
   .chat-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem; }
   .chat-input-row { display: flex; gap: 0.6rem; }
   .chat-input-row .text-input { flex: 1; }
+  .metric-group { margin-top: 1.4rem; }
+  .metric-group:first-of-type { margin-top: 0.4rem; }
+  .metric-group-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .metric-group > .metric-group-title::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
   .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.9rem;
-    margin-bottom: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 0.75rem;
   }
+  .metrics-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .metrics-grid-hero .metric-tile:nth-child(-n+3) .metric-value { font-size: 1.75rem; }
   .metric-tile {
     position: relative;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 0.85rem 1rem;
+    padding: 0.8rem 0.95rem 0.85rem 1.05rem;
     background: var(--surface-2);
     overflow: hidden;
+    min-width: 0;
     transition: border-color 0.15s ease, transform 0.15s ease;
   }
   .metric-tile::before {
@@ -713,30 +757,115 @@ PAGE_CSS = """
     position: absolute;
     left: 0; top: 0; bottom: 0;
     width: 3px;
-    background: var(--primary);
-    opacity: 0.55;
+    background: var(--border-strong);
   }
+  .metric-tile.tile-accent::before { background: var(--primary); }
+  .metric-tile.tile-good::before { background: var(--success-text); }
+  .metric-tile.tile-warn::before { background: var(--warn); }
+  .metric-tile.tile-danger::before { background: var(--danger); }
+  .metric-tile.tile-danger .metric-value { color: var(--danger); }
+  .metric-tile.tile-warn .metric-value { color: var(--warn); }
   .metric-tile:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+  .metric-tile .metric-label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
   .metric-tile .metric-value {
     font-size: 1.4rem;
     font-weight: 750;
     color: var(--text);
     line-height: 1.2;
+    margin-top: 0.2rem;
+    font-variant-numeric: tabular-nums;
   }
-  .metric-tile .metric-label {
-    font-size: 0.74rem;
+  .metric-sub { font-size: 0.74rem; color: var(--text-muted); margin-top: 0.3rem; line-height: 1.4; }
+  .budget {
+    margin-top: 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.8rem 1rem;
+    background: var(--surface-2);
+    --budget-color: var(--success-text);
+  }
+  .budget-warn { --budget-color: var(--warn); }
+  .budget-danger { --budget-color: var(--danger); }
+  .budget-head {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    font-size: 0.86rem;
+  }
+  .budget-left strong { color: var(--budget-color); }
+  .budget-track {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--border);
+    margin: 0.55rem 0 0.1rem 0;
+  }
+  .budget-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--budget-color);
+    min-width: 4px;
+  }
+  .budget-projection {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--text-muted);
+    border-radius: 2px;
+  }
+  .budget-empty {
+    margin-top: 0.9rem;
+    font-size: 0.8rem;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-top: 0.15rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 0.9rem;
   }
-  .metric-sub { font-size: 0.76rem; color: var(--text-muted); margin-top: 0.2rem; }
+  .chart { margin-top: 1.4rem; }
+  .chart-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .chart-tabs {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px;
+    background: var(--surface-2);
+  }
+  .chart-tab {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.76rem;
+    font-weight: 600;
+    padding: 0.28rem 0.8rem;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .chart-tab.active { background: var(--primary); color: #fff; }
+  .chart-total { font-size: 0.78rem; color: var(--text-muted); margin: 0.5rem 0 0.2rem 0; }
   .daily-bars {
     display: flex;
     align-items: flex-end;
     gap: 0.35rem;
-    height: 90px;
+    height: 130px;
     margin-top: 0.5rem;
+    padding-bottom: 0.1rem;
+    border-bottom: 1px solid var(--border);
   }
   .daily-bar-col {
     flex: 1;
@@ -749,18 +878,34 @@ PAGE_CSS = """
   }
   .daily-bar {
     width: 100%;
-    max-width: 22px;
+    max-width: 28px;
     background: linear-gradient(180deg, var(--primary-hover), var(--primary));
-    border-radius: 3px 3px 0 0;
-    min-height: 2px;
+    border-radius: 4px 4px 0 0;
     transition: opacity 0.15s ease;
   }
   .daily-bar-col:hover .daily-bar { opacity: 0.8; }
+  .daily-bar-value {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    margin-bottom: 0.2rem;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
   .daily-bar-label {
     font-size: 0.62rem;
     color: var(--text-muted);
     margin-top: 0.3rem;
     white-space: nowrap;
+  }
+  .metrics-footnote {
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    margin: 1.2rem 0 0 0;
+    line-height: 1.5;
+  }
+  @media (max-width: 640px) {
+    .metrics-grid, .metrics-grid.cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .daily-bar-value { display: none; }
   }
 """
 
@@ -1142,54 +1287,227 @@ def _render_top_card(
 """
 
 
-def _render_daily_bars(daily: dict[str, dict]) -> str:
-    if not daily:
-        return "<p class='subtitle' style='margin: 0.5rem 0 0 0;'>No usage recorded yet.</p>"
-    max_requests = max(d["requests"] for d in daily.values()) or 1
-    cols = ""
-    for day, d in daily.items():
-        height_pct = max(4, round(d["requests"] / max_requests * 100))
-        label = day[5:]  # MM-DD
-        cols += f"""
-<div class="daily-bar-col" title="{html.escape(day)}: {d['requests']} requests, {d['total_tokens']} tokens">
-  <div class="daily-bar" style="height: {height_pct}%;"></div>
-  <div class="daily-bar-label">{html.escape(label)}</div>
-</div>"""
-    return f"<div class='daily-bars'>{cols}</div>"
+def _money(value: float) -> str:
+    """Dollars with enough precision to be meaningful at gpt-4o-mini prices,
+    where a single answer costs a fraction of a cent."""
+    if value >= 100:
+        return f"${value:,.0f}"
+    if value >= 0.1:
+        return f"${value:,.2f}"
+    if value >= 0.01:
+        return f"${value:.3f}"
+    if value == 0:
+        return "$0.00"
+    return f"${value:.4f}"
 
 
-def _render_metrics_card(summary: dict) -> str:
-    tiles = [
-        (f"{summary['chat_requests']:,}", "Chat requests"),
-        (f"{summary['cache_hit_rate']:.0f}%", "Cache hit rate"),
-        (f"{summary['total_tokens']:,}", "Total tokens used"),
-        (f"{summary['prompt_tokens']:,}", "Prompt tokens"),
-        (f"{summary['completion_tokens']:,}", "Completion tokens"),
-        (f"{summary['embedding_tokens']:,}", "Embedding tokens"),
-        (f"{summary['avg_latency_ms']:,.0f} ms", "Avg. response time"),
-        (f"{summary['refusals']:,}", "Refusals (\"I don't know\")"),
-        (f"{summary['errors']:,}", "Upstream errors"),
-    ]
-    tiles_html = "".join(
-        f"""<div class="metric-tile">
-  <div class="metric-value">{value}</div>
+def _compact(n: float) -> str:
+    """1,234,567 -> 1.23M, for tight tiles; the exact figure goes in the sub-line or tooltip."""
+    for size, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")):
+        if abs(n) >= size:
+            return f"{n / size:.2f}".rstrip("0").rstrip(".") + suffix
+    return f"{n:,.0f}"
+
+
+def _pct_of(part: float, whole: float) -> float:
+    return part / whole * 100 if whole else 0.0
+
+
+def _metric_tile(value: str, label: str, sub: str = "", tone: str = "", tooltip: str = "") -> str:
+    tone_class = f" tile-{tone}" if tone else ""
+    title_attr = f' title="{html.escape(tooltip)}"' if tooltip else ""
+    sub_html = f'<div class="metric-sub">{sub}</div>' if sub else ""
+    return f"""<div class="metric-tile{tone_class}"{title_attr}>
   <div class="metric-label">{html.escape(label)}</div>
+  <div class="metric-value">{value}</div>
+  {sub_html}
 </div>"""
-        for value, label in tiles
+
+
+def _metric_group(title: str, tiles: list[str], hero: bool = False) -> str:
+    # Groups of 6 lay out as 3 + 3 rather than 4 + 2.
+    grid_class = "metrics-grid" + (" metrics-grid-hero" if hero else "") + (" cols-3" if len(tiles) % 3 == 0 else "")
+    return f"""<div class="metric-group">
+  <div class="metric-group-title">{html.escape(title)}</div>
+  <div class="{grid_class}">{''.join(tiles)}</div>
+</div>"""
+
+
+def _render_budget_bar(s: dict) -> str:
+    if not s["monthly_budget"]:
+        return (
+            "<div class='budget-empty'>No monthly budget set &mdash; set "
+            "<code>monthly_budget_usd</code> in Live configuration to see how much is left this month.</div>"
+        )
+    used_pct = s["budget_used_pct"]
+    projected_pct = _pct_of(s["projected_month"], s["monthly_budget"])
+    tone = "danger" if used_pct >= 90 else "warn" if used_pct >= 70 or projected_pct > 100 else "ok"
+    forecast = f"On track to spend <strong>{_money(s['projected_month'])}</strong> by month end" + (
+        " &mdash; <strong>over budget</strong>" if projected_pct > 100 else ""
     )
+    return f"""<div class="budget budget-{tone}">
+  <div class="budget-head">
+    <span><strong>{_money(s['cost_month'])}</strong> of {_money(s['monthly_budget'])} monthly budget used</span>
+    <span class="budget-left"><strong>{_money(s['budget_remaining'])}</strong> left &middot; {used_pct:.0f}%</span>
+  </div>
+  <div class="budget-track">
+    <div class="budget-fill" style="width: {min(100.0, used_pct):.1f}%;"></div>
+    <div class="budget-projection" style="left: {min(100.0, projected_pct):.1f}%;" title="Projected month-end spend"></div>
+  </div>
+  <div class="metric-sub">{forecast}</div>
+</div>"""
+
+
+def _render_daily_chart(daily: dict[str, dict]) -> str:
+    if not any(d["requests"] or d["total_tokens"] for d in daily.values()):
+        return "<p class='subtitle' style='margin: 0.5rem 0 0 0;'>No usage recorded yet.</p>"
+    series = {
+        "requests": ("Answers", lambda v: f"{v:,.0f}"),
+        "total_tokens": ("Tokens", _compact),
+        "cost": ("Cost", _money),
+    }
+    panels = ""
+    for key, (label, fmt) in series.items():
+        peak = max(d[key] for d in daily.values()) or 1
+        total = sum(d[key] for d in daily.values())
+        cols = ""
+        for day, d in daily.items():
+            height_pct = max(3, round(d[key] / peak * 100)) if d[key] else 0
+            value = html.escape(fmt(d[key])) if d[key] else ""
+            cols += f"""
+<div class="daily-bar-col" title="{html.escape(day)}: {html.escape(fmt(d[key]))} {label.lower()}">
+  <div class="daily-bar-value">{value}</div>
+  <div class="daily-bar" style="height: {height_pct}%;"></div>
+  <div class="daily-bar-label">{html.escape(day[5:])}</div>
+</div>"""
+        hidden = "" if key == "requests" else " hidden"
+        panels += f"""<div class="chart-panel" data-series="{key}"{hidden}>
+  <div class="chart-total">{html.escape(fmt(total))} {label.lower()} over the last {len(daily)} days</div>
+  <div class="daily-bars">{cols}</div>
+</div>"""
+    tabs = "".join(
+        f'<button type="button" class="chart-tab{" active" if key == "requests" else ""}" '
+        f'data-series="{key}">{label}</button>'
+        for key, (label, _) in series.items()
+    )
+    return f"""<div class="chart" id="daily-chart">
+  <div class="chart-head">
+    <div class="metric-group-title" style="margin: 0;">Per day</div>
+    <div class="chart-tabs">{tabs}</div>
+  </div>
+  {panels}
+</div>
+<script>
+(function () {{
+  var chart = document.getElementById('daily-chart');
+  chart.querySelectorAll('.chart-tab').forEach(function (tab) {{
+    tab.addEventListener('click', function () {{
+      chart.querySelectorAll('.chart-tab').forEach(function (t) {{ t.classList.toggle('active', t === tab); }});
+      chart.querySelectorAll('.chart-panel').forEach(function (p) {{ p.hidden = p.dataset.series !== tab.dataset.series; }});
+    }});
+  }});
+}})();
+</script>"""
+
+
+def _render_metrics_card(s: dict) -> str:
+    since = ""
+    if s["since"]:
+        try:
+            since = "Since " + datetime.fromisoformat(s["since"]).strftime("%b %d, %Y") + " &middot; "
+        except ValueError:
+            pass
+    models = f"{html.escape(s['chat_model'])} &middot; {html.escape(s['embedding_model'])}"
+
+    spend = _metric_group("Spend", [
+        _metric_tile(_money(s["total_cost"]), "Total spent",
+                     f"AI answers {_money(s['chat_cost'])} &middot; embeddings {_money(s['embedding_cost'])}",
+                     tone="accent"),
+        _metric_tile(_money(s["cost_month"]), "This month",
+                     f"Projected {_money(s['projected_month'])} by month end", tone="accent"),
+        _metric_tile(_money(s["cost_today"]), "Today", "UTC day", tone="accent"),
+        _metric_tile(_money(s["avg_cost_per_answer"]), "Avg. cost per answer",
+                     f"&asymp; {_money(s['avg_cost_per_answer'] * 1000)} per 1,000 answers"),
+        _metric_tile(_money(s["cache_savings"]), "Saved by cache",
+                     f"{s['cache_hits']:,} answers served without calling the AI", tone="good"),
+        _metric_tile(_money(s["ingest_cost"]), "Knowledge ingestion",
+                     f"{s['ingest_embedding_tokens']:,} embedding tokens, included in total"),
+    ], hero=True)
+
+    traffic = _metric_group("Traffic", [
+        _metric_tile(f"{s['chat_requests']:,}", "Chat requests", "Questions that passed validation"),
+        _metric_tile(f"{s['answered']:,}", "Answered",
+                     f"{s['generation_count']:,} by the AI &middot; {s['cache_hits']:,} from cache"),
+        _metric_tile(f"{s['cache_hit_rate']:.0f}%", "Cache hit rate", f"{s['cache_hits']:,} cache hits"),
+        _metric_tile(f"{s['small_talk']:,}", "Small talk", "Thanks, greetings, goodbyes"),
+        _metric_tile(f"{s['refusals']:,}", "Couldn't answer",
+                     f"{s['refusal_rate']:.1f}% of AI answers &middot; see Knowledge Gaps",
+                     tone="warn" if s["refusal_rate"] >= 20 else ""),
+        _metric_tile(f"{s['errors']:,}", "Errors",
+                     f"{s['error_rate']:.1f}% of requests (OpenAI / Qdrant failures)",
+                     tone="danger" if s["errors"] else ""),
+        _metric_tile(f"{s['rate_limited']:,}", "Rate-limited", "Blocked for asking too fast"),
+        _metric_tile(f"{s['rejected_too_long']:,}", "Too long", "Rejected for exceeding max_question_words"),
+    ])
+
+    if s["context_window"]:
+        context_value = _compact(s["context_window"])
+        context_sub = (
+            f"Largest prompt so far: {s['max_prompt_tokens']:,} tokens "
+            f"({_pct_of(s['max_prompt_tokens'], s['context_window']):.1f}% of the window)"
+        )
+        output_sub = f"model allows up to {s['model_max_output']:,}"
+    else:
+        context_value = "Unknown"
+        context_sub = f"Largest prompt so far: {s['max_prompt_tokens']:,} tokens"
+        output_sub = f"limits for {html.escape(s['chat_model'])} aren't listed in metrics.MODEL_LIMITS"
+    truncated = s["truncated_answers"]
+    tokens = _metric_group("Tokens & limits", [
+        _metric_tile(_compact(s["total_tokens"]), "Total tokens",
+                     f"Prompt {_compact(s['prompt_tokens'])} &middot; answer {_compact(s['completion_tokens'])} "
+                     f"&middot; embedding {_compact(s['embedding_tokens'])}",
+                     tooltip=f"{s['total_tokens']:,} tokens"),
+        _metric_tile(f"{s['avg_tokens_per_answer']:,.0f}", "Avg. tokens per answer",
+                     f"Of which {s['avg_completion_tokens']:,.0f} is the written answer"),
+        _metric_tile(f"{s['max_answer_tokens']:,}", "Max answer length",
+                     f"max_answer_tokens setting &middot; {output_sub}"),
+        _metric_tile(f"{s['max_completion_tokens']:,}", "Longest answer",
+                     f"{_pct_of(s['max_completion_tokens'], s['max_answer_tokens']):.0f}% of the max answer length"),
+        _metric_tile(context_value, "Context window", context_sub),
+        _metric_tile(f"{truncated:,}", "Cut-off answers",
+                     "Hit the max answer length mid-sentence" + (" &mdash; consider raising it" if truncated else ""),
+                     tone="danger" if truncated else ""),
+    ])
+
+    def seconds(ms: float) -> str:
+        # 0 means "not measured yet" (e.g. metrics recorded before these stats existed).
+        return f"{ms / 1000:.2f}s" if ms else "&mdash;"
+
+    speed = _metric_group("Response time (AI answers)", [
+        _metric_tile(seconds(s["avg_latency_ms"]), "Average"),
+        _metric_tile(seconds(s["p50_latency_ms"]), "Typical (median)", "Half of answers are faster"),
+        _metric_tile(seconds(s["p95_latency_ms"]), "Slow (95th percentile)", "95% of answers are faster"),
+        _metric_tile(seconds(s["max_latency_ms"]), "Slowest"),
+    ])
+
+    prices = s["prices"]
     return f"""
 <div class="card">
   <div class="card-header">
     <h2>Usage Metrics</h2>
-    <span class="subtitle">Counted since the last reset - includes both live requests and knowledge re-ingestion</span>
+    <span class="subtitle">{since}{models}</span>
   </div>
-  <div class="metrics-grid">
-    {tiles_html}
-  </div>
-  <div class="label" style="text-transform: uppercase; font-size: 0.76rem; color: var(--text-muted); letter-spacing: 0.04em; margin-top: 1rem;">
-    Requests per day (last {len(summary['daily'])} days)
-  </div>
-  {_render_daily_bars(summary["daily"])}
+  {spend}
+  {_render_budget_bar(s)}
+  {traffic}
+  {tokens}
+  {speed}
+  {_render_daily_chart(s["daily"])}
+  <p class="metrics-footnote">
+    Dollar figures are estimates: token counts &times; ${prices['input']:.2f} / ${prices['output']:.2f} per 1M
+    prompt / answer tokens and ${prices['embedding']:.2f} per 1M embedding tokens (edit these in Live
+    configuration if prices change). Your OpenAI billing page is the source of truth.
+  </p>
 </div>
 """
 
@@ -1315,7 +1633,7 @@ def _render_page(
       <span class="stat-pill"><strong>{total_misses}</strong> knowledge gaps</span>
       <span class="stat-pill"><strong>{total_cached}</strong> cached answers</span>
       <span class="stat-pill"><strong>{total_conversations}</strong> conversations logged</span>
-      <span class="stat-pill"><strong>{metrics_summary['total_tokens']:,}</strong> tokens used</span>
+      <span class="stat-pill"><strong>{_money(metrics_summary['total_cost'])}</strong> spent</span>
     </div>
   </div>
 </header>
@@ -1370,7 +1688,7 @@ def _render_page(
   <div class="danger-zone">
     <div class="label">Usage metrics</div>
     <p class="subtitle" style="margin: 0 0 0.6rem 0;">
-      Resets every counter above (requests, tokens, cache hit rate, latency) back to zero. Doesn't
+      Resets every counter above (spend, requests, tokens, cache hit rate, response time) back to zero. Doesn't
       affect knowledge gaps, cached answers, or the conversation log.
     </p>
     <form method="post" action="/admin/metrics/clear">

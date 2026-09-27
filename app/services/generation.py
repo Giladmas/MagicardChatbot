@@ -345,5 +345,7 @@ def generate_answer(
         completion_tokens=usage.completion_tokens if usage else 0,
         latency_ms=latency_ms,
         refusal=(answer == REFUSAL),
+        small_talk=small_talk_parts is not None,
+        truncated=response.choices[0].finish_reason == "length",
     )
     return answer

@@ -77,9 +77,48 @@ def check_small_talk_detection() -> None:
         check(f"not small talk: {message!a}", _small_talk_parts(message) is None)
 
 
+def check_metrics() -> None:
+    from app.api.admin import _money, _render_metrics_card
+    from app.runtime_config import DEFAULTS
+    from app.services import metrics
+
+    cfg = {**DEFAULTS, "chat_input_price_per_1m": 1.0, "chat_output_price_per_1m": 4.0,
+           "embedding_price_per_1m": 0.5, "monthly_budget_usd": 10.0}
+    with tempfile.TemporaryDirectory() as tmp, \
+            patch("app.services.metrics.METRICS_PATH", Path(tmp) / "metrics.json"), \
+            patch("app.services.metrics.get_config", return_value=cfg):
+        metrics.record_chat_request()
+        metrics.record_generation(1_000_000, 250_000, 800.0, refusal=False, small_talk=True)
+        metrics.record_chat_request()
+        metrics.record_generation(0, 250_000, 1200.0, refusal=True, truncated=True)
+        metrics.record_cache_hit()
+        metrics.record_embedding_tokens(2_000_000, ingest=True)
+        metrics.record_rate_limited()
+        metrics.record_rejected_too_long()
+        s = metrics.get_summary()
+
+        # $1 prompt + $2 answers (500K x $4/1M) + $1 embeddings
+        check("metrics: total cost", abs(s["total_cost"] - 4.0) < 1e-9)
+        check("metrics: today's cost matches total", abs(s["cost_today"] - 4.0) < 1e-9)
+        check("metrics: budget remaining", abs(s["budget_remaining"] - 6.0) < 1e-9)
+        check("metrics: ingestion cost split out", abs(s["ingest_cost"] - 1.0) < 1e-9)
+        check("metrics: avg cost per answer excludes ingestion", abs(s["avg_cost_per_answer"] - 1.0) < 1e-9)
+        check("metrics: cache savings = hits x avg AI answer cost", abs(s["cache_savings"] - 1.5) < 1e-9)
+        check("metrics: counters", (s["answered"], s["small_talk"], s["refusals"], s["truncated_answers"],
+                                    s["rate_limited"], s["rejected_too_long"]) == (3, 1, 1, 1, 1, 1))
+        check("metrics: largest prompt / slowest", s["max_prompt_tokens"] == 1_000_000 and s["max_latency_ms"] == 1200.0)
+        check("metrics: daily window is contiguous", len(s["daily"]) == 14)
+        card = _render_metrics_card(s)
+        check("metrics card shows spend and budget", "$4.00" in card and "$6.00" in card and "Cut-off answers" in card)
+
+    check("money: fractions of a cent keep precision", _money(0.000216) == "$0.0002")
+    check("money: cents", _money(0.62) == "$0.62")
+
+
 def main() -> None:
     check_error_context()
     check_small_talk_detection()
+    check_metrics()
 
     with tempfile.TemporaryDirectory() as tmp:
         config_path = Path(tmp) / "runtime_config.json"

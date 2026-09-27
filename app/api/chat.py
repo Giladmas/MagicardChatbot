@@ -66,6 +66,7 @@ def chat(
         raise HTTPException(status_code=400, detail="question must not be empty")
     word_count = len(question.split())
     if word_count > cfg["max_question_words"]:
+        metrics.record_rejected_too_long()
         raise HTTPException(
             status_code=400,
             detail=f"question is too long ({word_count} words, max {cfg['max_question_words']})",
@@ -73,6 +74,7 @@ def chat(
 
     wait_seconds = check_rate_limit(x_user_id, cfg["rate_limit_seconds"])
     if wait_seconds is not None:
+        metrics.record_rate_limited()
         unit = "second" if wait_seconds == 1 else "seconds"
         raise RateLimitExceeded(
             detail=f"Too many requests. Try again in {wait_seconds} {unit}.",
