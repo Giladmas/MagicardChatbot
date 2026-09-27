@@ -15,6 +15,7 @@ EVAL_QUESTIONS: list[tuple[str, str]] = [
     ("Can I cancel a withdrawal once it's sent?", "withdrawals.txt"),
     ("How do I create a virtual card?", "cards.txt"),
     ("Why was my card declined?", "cards.txt"),
+    ("How many cards can I have?", "cards.txt"),
     ("What is KYC?", "kyc.txt"),
     ("My verification is stuck pending, what should I do?", "kyc.txt"),
     ("Should I share my CVV with the chatbot?", "account_security.txt"),

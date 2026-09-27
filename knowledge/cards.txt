@@ -19,3 +19,5 @@ Card details such as the card number, expiry date, and CVV are sensitive informa
 If a card transaction is unexpectedly declined, the customer should verify their card status and available balance before contacting Magicard support.
 
 To create a virtual card, the customer goes to the Cards section (found under the Cards icon at the bottom of the home screen) and starts the card creation flow there. Sufficient wallet balance is needed to cover the card creation amount plus the applicable fee before the card can be created.
+
+Each customer can have a maximum of 3 active virtual cards at a time. Once this limit is reached, no additional cards can be created.
