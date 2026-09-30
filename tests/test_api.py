@@ -313,9 +313,9 @@ def main() -> None:
             from app.services.conversation_history import append_turn, get_history
 
             with patch("time.monotonic", return_value=1000.0):
-                append_turn("u_expiry", "q", "a", ttl_seconds=5, max_turns=6)
+                append_turn(("magicard", "u_expiry"), "q", "a", ttl_seconds=5, max_turns=6)
             with patch("time.monotonic", return_value=1010.0):
-                check("history expires after ttl", get_history("u_expiry", ttl_seconds=5) == [])
+                check("history expires after ttl", get_history(("magicard", "u_expiry"), ttl_seconds=5) == [])
 
             # --- semantic cache: hit skips retrieval/generation, miss falls through and stores ---
             with (
@@ -338,6 +338,55 @@ def main() -> None:
             ):
                 client.post("/chat", json={"question": "uncached question"}, headers={"X-User-Id": "u8"})
                 check("cache miss stores the fresh answer", mock_store.called)
+
+            # --- multi-site: X-Site validation, (site, user id) keys, brand swap on the answer ---
+            r = client.post("/chat", json={"question": "hi"}, headers={"X-User-Id": "u9", "X-Site": "other"})
+            check("unknown X-Site -> 400", r.status_code == 400)
+
+            turqpay = {"X-User-Id": "u9", "X-Site": "turqpay", "X-Site-Name": "Turqpay"}
+            magicard = {"X-User-Id": "u9", "X-Site": "magicard", "X-Site-Name": "Magicard"}
+            with (
+                patch("app.api.chat.retrieve", return_value=FAKE_CHUNKS),
+                patch("app.api.chat.generate_answer", return_value="Contact Magicard support. MAGICARD rocks."),
+            ):
+                r = client.post("/chat", json={"question": "site question"}, headers=turqpay)
+                check("turqpay answer swaps Magicard -> Turqpay",
+                      r.json().get("answer") == "Contact Turqpay support. Turqpay rocks.")
+                r = client.post("/chat", json={"question": "site question"}, headers=magicard)
+                check("same user id on another site not rate-limited", r.status_code == 200)
+                check("magicard answer unchanged",
+                      r.json().get("answer") == "Contact Magicard support. MAGICARD rocks.")
+                r = client.post("/chat", json={"question": "site question"}, headers=turqpay)
+                check("same (site, user id) still rate-limited", r.status_code == 429)
+
+            from app.services.conversation_history import get_history as _get_history
+
+            check("history kept per site",
+                  len(_get_history(("turqpay", "u9"), 1800)) == 1 and len(_get_history(("magicard", "u9"), 1800)) == 1)
+            check("history keeps the unbranded answer",
+                  _get_history(("turqpay", "u9"), 1800)[0].answer.startswith("Contact Magicard"))
+
+            with patch("app.services.clear_limit._clears", {}):
+                r = client.post("/chat/clear", headers=turqpay)
+                check("turqpay clear -> 200", r.status_code == 200)
+                check("clearing turqpay leaves magicard history",
+                      _get_history(("turqpay", "u9"), 1800) == [] and len(_get_history(("magicard", "u9"), 1800)) == 1)
+
+            with (
+                patch("app.api.chat.check_rate_limit", return_value=None),
+                patch("app.api.chat.retrieve", return_value=FAKE_CHUNKS),
+                patch("app.api.chat.generate_answer", return_value=REFUSAL),
+            ):
+                r = client.post("/chat", json={"question": "turqpay unknown"}, headers={**turqpay, "X-User-Id": "u10"})
+                check("turqpay refusal names Turqpay",
+                      r.json().get("answer") == "I don't have information about that in the Turqpay knowledge base.")
+
+            with (
+                patch("app.api.chat.check_rate_limit", return_value=None),
+                patch("app.api.chat.lookup", return_value=("Magicard cached answer", ["faq.txt"])),
+            ):
+                r = client.post("/chat", json={"question": "cached site question"}, headers={**turqpay, "X-User-Id": "u11"})
+                check("turqpay cache hit is branded", r.json().get("answer") == "Turqpay cached answer")
 
             # --- admin panel (checked before rotation pushes "unknown topic" into an archive) ---
             r = client.get("/admin")
@@ -427,7 +476,7 @@ def main() -> None:
             from app.services.conversation_history import _history as history_store
             from app.services.conversation_history import append_turn as _append_turn
 
-            _append_turn("some-user", "q", "a", ttl_seconds=1800, max_turns=6)
+            _append_turn(("magicard", "some-user"), "q", "a", ttl_seconds=1800, max_turns=6)
             check("history has an entry before clearing", len(history_store) > 0)
             r = client.post("/admin/history/clear", auth=("admin", "test-pass"))
             check("clear history -> 200", r.status_code == 200)
@@ -496,7 +545,7 @@ def main() -> None:
 
             _clear_conversations()
             for i in range(7):
-                _log_turn(f"conv-user-{i}", f"logged question {i}", f"logged answer {i}", rotate_at=1000)
+                _log_turn(("magicard", f"conv-user-{i}"), f"logged question {i}", f"logged answer {i}", rotate_at=1000)
 
             r = client.get("/admin", auth=("admin", "test-pass"))
             check("admin page shows Conversations section", "Conversations" in r.text)

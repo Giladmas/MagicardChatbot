@@ -11,11 +11,13 @@ import math
 import threading
 import time
 
-_last_request: dict[str, float] = {}
+from app.services.conversation_history import UserKey
+
+_last_request: dict[UserKey, float] = {}
 _lock = threading.Lock()
 
 
-def check_rate_limit(user_id: str, window_seconds: float) -> int | None:
+def check_rate_limit(user_key: UserKey, window_seconds: float) -> int | None:
     """Returns None if the request is allowed, otherwise whole seconds to wait.
 
     Rounded up (not down) so callers never retry before the window has
@@ -23,10 +25,10 @@ def check_rate_limit(user_id: str, window_seconds: float) -> int | None:
     """
     now = time.monotonic()
     with _lock:
-        last = _last_request.get(user_id)
+        last = _last_request.get(user_key)
         if last is not None:
             elapsed = now - last
             if elapsed < window_seconds:
                 return math.ceil(window_seconds - elapsed)
-        _last_request[user_id] = now
+        _last_request[user_key] = now
     return None

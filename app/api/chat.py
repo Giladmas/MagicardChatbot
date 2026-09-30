@@ -1,4 +1,5 @@
 import logging
+import re
 
 import openai
 from fastapi import APIRouter, Header, HTTPException
@@ -19,6 +20,25 @@ from app.services.retrieval import retrieve
 
 router = APIRouter()
 logger = logging.getLogger("magicard.chat")
+
+SITES = {"magicard", "turqpay"}
+_MAGICARD_RE = re.compile(r"\bmagi\s?card\b", re.IGNORECASE)
+
+
+def _resolve_site(x_site: str | None) -> str:
+    # Missing X-Site means magicard, so callers from before multi-site support keep working.
+    site = (x_site or "magicard").strip().lower()
+    if site not in SITES:
+        raise HTTPException(status_code=400, detail="X-Site must be 'magicard' or 'turqpay'")
+    return site
+
+
+def _brand_answer(answer: str, site: str, site_name: str | None) -> str:
+    """The whole pipeline (knowledge, prompt, cache, REFUSAL) speaks as Magicard; only
+    the final answer sent to a Turqpay user gets the brand name swapped."""
+    if site != "turqpay":
+        return answer
+    return _MAGICARD_RE.sub((site_name or "").strip() or "Turqpay", answer)
 
 
 class ClearConversationResponse(BaseModel):
@@ -52,6 +72,8 @@ def chat(
     body: ChatRequest,
     x_chat_secret: str | None = Header(default=None),
     x_user_id: str | None = Header(default=None),
+    x_site: str | None = Header(default=None),
+    x_site_name: str | None = Header(default=None),
 ) -> ChatResponse:
     if settings.chat_shared_secret and x_chat_secret != settings.chat_shared_secret:
         raise HTTPException(status_code=401, detail="Invalid or missing shared secret")
@@ -59,6 +81,8 @@ def chat(
     if not x_user_id:
         raise HTTPException(status_code=400, detail="X-User-Id header is required")
 
+    site = _resolve_site(x_site)
+    user_key = (site, x_user_id)
     cfg = get_config()
 
     question = body.question.strip()
@@ -72,7 +96,7 @@ def chat(
             detail=f"question is too long ({word_count} words, max {cfg['max_question_words']})",
         )
 
-    wait_seconds = check_rate_limit(x_user_id, cfg["rate_limit_seconds"])
+    wait_seconds = check_rate_limit(user_key, cfg["rate_limit_seconds"])
     if wait_seconds is not None:
         metrics.record_rate_limited()
         unit = "second" if wait_seconds == 1 else "seconds"
@@ -83,7 +107,7 @@ def chat(
 
     metrics.record_chat_request()
 
-    history = get_history(x_user_id, cfg["history_ttl_seconds"]) if cfg["history_enabled"] else []
+    history = get_history(user_key, cfg["history_ttl_seconds"]) if cfg["history_enabled"] else []
 
     # Cache only applies to the first turn of a conversation - follow-ups are
     # conversation-specific and unlikely to recur verbatim across users.
@@ -98,11 +122,12 @@ def chat(
         if cached is not None:
             answer, sources = cached
             metrics.record_cache_hit()
+            branded = _brand_answer(answer, site, x_site_name)
             if cfg["history_enabled"]:
-                append_turn(x_user_id, question, answer, cfg["history_ttl_seconds"], cfg["history_max_turns"])
+                append_turn(user_key, question, answer, cfg["history_ttl_seconds"], cfg["history_max_turns"])
             if cfg["conversation_log_enabled"]:
-                log_turn(x_user_id, question, answer, rotate_at=cfg["conversations_rotate_at"])
-            return ChatResponse(answer=answer, sources=sources)
+                log_turn(user_key, question, branded, rotate_at=cfg["conversations_rotate_at"])
+            return ChatResponse(answer=branded, sources=sources)
 
     try:
         chunks = retrieve(
@@ -135,12 +160,13 @@ def chat(
         return ChatResponse(answer=FALLBACK_ERROR, sources=[])
 
     sources = sorted({c.source for c in chunks})
+    branded = _brand_answer(answer, site, x_site_name)
 
     if cfg["history_enabled"]:
-        append_turn(x_user_id, question, answer, cfg["history_ttl_seconds"], cfg["history_max_turns"])
+        append_turn(user_key, question, answer, cfg["history_ttl_seconds"], cfg["history_max_turns"])
 
     if cfg["conversation_log_enabled"]:
-        log_turn(x_user_id, question, answer, rotate_at=cfg["conversations_rotate_at"])
+        log_turn(user_key, question, branded, rotate_at=cfg["conversations_rotate_at"])
 
     if answer == REFUSAL:
         log_miss(question, rotate_at=cfg["knowledge_gaps_rotate_at"])
@@ -150,7 +176,7 @@ def chat(
         except Exception:
             logger.exception("cache store failed for question=%r", question)
 
-    return ChatResponse(answer=answer, sources=sources)
+    return ChatResponse(answer=branded, sources=sources)
 
 
 def _describe_window(seconds: float) -> str:
@@ -165,6 +191,7 @@ def _describe_window(seconds: float) -> str:
 def clear_conversation(
     x_chat_secret: str | None = Header(default=None),
     x_user_id: str | None = Header(default=None),
+    x_site: str | None = Header(default=None),
 ) -> ClearConversationResponse:
     if settings.chat_shared_secret and x_chat_secret != settings.chat_shared_secret:
         raise HTTPException(status_code=401, detail="Invalid or missing shared secret")
@@ -172,12 +199,13 @@ def clear_conversation(
     if not x_user_id:
         raise HTTPException(status_code=400, detail="X-User-Id header is required")
 
+    user_key = (_resolve_site(x_site), x_user_id)
     cfg = get_config()
     limit = cfg["clear_conversation_limit"]
     window_seconds = cfg["clear_conversation_window_seconds"]
     window_desc = _describe_window(window_seconds)
 
-    result = check_and_record_clear(x_user_id, limit, window_seconds)
+    result = check_and_record_clear(user_key, limit, window_seconds)
 
     if not result.allowed:
         unit = "second" if result.retry_after == 1 else "seconds"
@@ -189,7 +217,7 @@ def clear_conversation(
             retry_after_seconds=result.retry_after,
         )
 
-    clear_user_history(x_user_id)
+    clear_user_history(user_key)
 
     return ClearConversationResponse(
         cleared=True,

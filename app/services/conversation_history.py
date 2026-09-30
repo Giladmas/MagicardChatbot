@@ -1,4 +1,4 @@
-"""Server-side multi-turn conversation memory, keyed by X-User-Id.
+"""Server-side multi-turn conversation memory, keyed by (X-Site, X-User-Id).
 
 In-memory, per-process - resets on restart and isn't shared across multiple
 worker processes (same caveat as rate_limit.py). Fine for a single-worker
@@ -10,6 +10,9 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
+
+# (site, site-local user id) - user ids collide across sites, so the pair is the key.
+UserKey = tuple[str, str]
 
 
 @dataclass
@@ -24,11 +27,11 @@ class _Entry:
     last_active: float = 0.0
 
 
-_history: dict[str, _Entry] = {}
+_history: dict[UserKey, _Entry] = {}
 _lock = threading.Lock()
 
 
-def get_history(user_id: str, ttl_seconds: float) -> list[Turn]:
+def get_history(user_key: UserKey, ttl_seconds: float) -> list[Turn]:
     """Returns prior turns for this user, or [] if none/expired.
 
     Expiry is lazy: checked here on read. Does not update last_active or
@@ -37,16 +40,16 @@ def get_history(user_id: str, ttl_seconds: float) -> list[Turn]:
     """
     now = time.monotonic()
     with _lock:
-        entry = _history.get(user_id)
+        entry = _history.get(user_key)
         if entry is None:
             return []
         if now - entry.last_active >= ttl_seconds:
-            del _history[user_id]
+            del _history[user_key]
             return []
         return list(entry.turns)
 
 
-def append_turn(user_id: str, question: str, answer: str, ttl_seconds: float, max_turns: int) -> None:
+def append_turn(user_key: UserKey, question: str, answer: str, ttl_seconds: float, max_turns: int) -> None:
     """Records a completed turn, resetting the inactivity clock.
 
     If the existing entry has already expired, starts a fresh history -
@@ -55,10 +58,10 @@ def append_turn(user_id: str, question: str, answer: str, ttl_seconds: float, ma
     """
     now = time.monotonic()
     with _lock:
-        entry = _history.get(user_id)
+        entry = _history.get(user_key)
         if entry is None or now - entry.last_active >= ttl_seconds:
             entry = _Entry()
-            _history[user_id] = entry
+            _history[user_key] = entry
         entry.turns.append(Turn(question=question, answer=answer))
         if len(entry.turns) > max_turns:
             entry.turns = entry.turns[-max_turns:]
@@ -71,7 +74,7 @@ def clear_all_history() -> None:
         _history.clear()
 
 
-def clear_user_history(user_id: str) -> None:
+def clear_user_history(user_key: UserKey) -> None:
     """Wipes one user's conversation history. Used by the end-user "Clear conversation" action."""
     with _lock:
-        _history.pop(user_id, None)
+        _history.pop(user_key, None)

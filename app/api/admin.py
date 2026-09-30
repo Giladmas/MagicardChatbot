@@ -1043,11 +1043,12 @@ def _render_conversation_rows(entries: list[dict], next_path: str) -> str:
         return "<tr><td colspan='5' class='empty-state'>No conversations logged yet.</td></tr>"
     rows = ""
     for e in entries:
-        search_key = f"{e['user_id']} {e['question']} {e['answer']}".lower()
+        site = e.get("site", "magicard")  # entries logged before multi-site support
+        search_key = f"{site} {e['user_id']} {e['question']} {e['answer']}".lower()
         rows += f"""
 <tr data-search="{html.escape(search_key)}">
   <td class="col-timestamp">{html.escape(_format_timestamp(e['timestamp']))}</td>
-  <td><code>{html.escape(e['user_id'])}</code></td>
+  <td><code>{html.escape(site)}:{html.escape(e['user_id'])}</code></td>
   <td>{_clamped_cell(e['question'])}</td>
   <td>{_clamped_cell(e['answer'])}</td>
   <td class="col-action">{_delete_form('/admin/conversations/delete', e['id'], next_path)}</td>
@@ -1125,6 +1126,13 @@ def _render_chatbox() -> str:
   </div>
   <div class="chat-headers-row">
     <div class="chat-field">
+      <label class="field-label" for="chat-site">X-Site</label>
+      <select id="chat-site" class="text-input">
+        <option value="magicard" data-name="Magicard">magicard</option>
+        <option value="turqpay" data-name="Turqpay">turqpay</option>
+      </select>
+    </div>
+    <div class="chat-field">
       <label class="field-label" for="chat-user-id">X-User-Id</label>
       <input id="chat-user-id" class="text-input" placeholder="e.g. admin-test-abc123">
     </div>
@@ -1144,6 +1152,7 @@ def _render_chatbox() -> str:
 
 <script>
 (function () {
+  var siteInput = document.getElementById('chat-site');
   var userIdInput = document.getElementById('chat-user-id');
   var secretInput = document.getElementById('chat-secret');
   var messagesEl = document.getElementById('chat-messages');
@@ -1186,7 +1195,13 @@ def _render_chatbox() -> str:
     inputEl.value = '';
     sendBtn.disabled = true;
 
-    var headers = { 'Content-Type': 'application/json', 'X-User-Id': userId };
+    var siteOption = siteInput.options[siteInput.selectedIndex];
+    var headers = {
+      'Content-Type': 'application/json',
+      'X-User-Id': userId,
+      'X-Site': siteOption.value,
+      'X-Site-Name': siteOption.getAttribute('data-name')
+    };
     if (secretInput.value.trim()) headers['X-Chat-Secret'] = secretInput.value.trim();
 
     fetch('/chat', { method: 'POST', headers: headers, body: JSON.stringify({ question: question }) })

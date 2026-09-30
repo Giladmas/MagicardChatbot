@@ -15,6 +15,8 @@ there's no session/socket to maintain, and no SDK to install. Plain HTTP works f
 POST /chat
 Content-Type: application/json
 X-User-Id: <string, required>
+X-Site: magicard | turqpay
+X-Site-Name: <display name, e.g. Turqpay>
 
 {"question": "What is KYC?"}
 ```
@@ -23,6 +25,8 @@ X-User-Id: <string, required>
 | Header | Required? | Purpose |
 |---|---|---|
 | `X-User-Id` | **Always** | Identifies the end user for per-user rate limiting. Since this is a server-to-server call, the chatbot has no other way to tell users apart — Laravel must forward its own authenticated user id (or a stable guest/session id for anonymous users). Missing → `400`. |
+| `X-Site` | Yes (defaults to `magicard` if missing) | Which site the user is on: `magicard` or `turqpay` (= `APP_BRAND`). User ids are site-local and collide across sites, so the chatbot keys rate limits, conversation history and clear limits by the pair (`X-Site`, `X-User-Id`) — user `5` on Magicard and user `5` on Turqpay are different users. Any other value → `400`. |
+| `X-Site-Name` | Recommended | Display name to use in answers (= `brand('name')`). The chatbot's knowledge base is written as Magicard; when `X-Site` is `turqpay`, every "Magicard" in the final answer is replaced with this name (falls back to `Turqpay` if missing). Ignored for `magicard`. |
 | `X-Chat-Secret` | Only if configured | A shared secret so random clients on the internet can't hit `/chat` directly. Ask whoever deployed the chatbot whether `CHAT_SHARED_SECRET` is set in its `.env`; if so, Laravel must send the same value on every request. Wrong/missing when required → `401`. Store it in Laravel's own `.env`, never hardcode it. |
 | `Content-Type` | Yes | Must be `application/json`. |
 
@@ -72,10 +76,12 @@ button, before/instead of just clearing the UI locally.
 ```
 POST /chat/clear
 X-User-Id: <string, required>
+X-Site: magicard | turqpay
+X-Site-Name: <display name>
 X-Chat-Secret: <string, only if configured>
 ```
 
-No body. Same headers/auth as `/chat` (see section 1) — `X-User-Id` identifies whose conversation
+No body. Same headers/auth as `/chat` (see section 1) — `X-Site` + `X-User-Id` identify whose conversation
 to clear, `X-Chat-Secret` is required only if the chatbot has `CHAT_SHARED_SECRET` configured.
 
 ### Response — success (`200`)
@@ -169,8 +175,9 @@ configurable window, default 30 minutes), attach it as `context` on the request:
 |---|---|---|---|
 | Question max length | 20 words | Server-side (`max_question_words`, live-configurable) | `400 {"detail": "question is too long (N words, max 20)"}` |
 | Question non-empty | — | Server-side | `400 {"detail": "question must not be empty"}` |
-| Rate limit | 1 request per 10s per `X-User-Id` | Server-side (`rate_limit_seconds`, live-configurable) | `429 {"detail": "Too many requests. Try again in N seconds.", "retry_after_seconds": N}` (N is a whole number, also echoed in a `Retry-After` header) |
+| Rate limit | 1 request per 10s per (`X-Site`, `X-User-Id`) | Server-side (`rate_limit_seconds`, live-configurable) | `429 {"detail": "Too many requests. Try again in N seconds.", "retry_after_seconds": N}` (N is a whole number, also echoed in a `Retry-After` header) |
 | `X-User-Id` present | — | Server-side | `400 {"detail": "X-User-Id header is required"}` |
+| `X-Site` valid | `magicard` if missing | Server-side | `400 {"detail": "X-Site must be 'magicard' or 'turqpay'"}` |
 | `X-Chat-Secret` correct | — (only if configured) | Server-side | `401 {"detail": "Invalid or missing shared secret"}` |
 
 **Recommendation for Laravel's own UI layer:** enforce the word limit and rate limit client-side too
@@ -182,7 +189,7 @@ config rather than assuming they never change (there's currently no `/chat` endp
 live limits back — ask if you need one, it'd be a small addition).
 
 **Conversation memory now exists — no Laravel changes needed.** The chatbot keeps a rolling
-conversation per `X-User-Id` server-side (in memory), so a follow-up like "what about for businesses?"
+conversation per (`X-Site`, `X-User-Id`) server-side (in memory), so a follow-up like "what about for businesses?"
 is automatically understood in context of the prior question/answer — Laravel does **not** need to
 prepend history into `question` itself; just keep sending the same `X-User-Id` for the same user across
 their session, exactly as already required for rate limiting. A conversation resets automatically after
@@ -212,9 +219,9 @@ answer is never reused across users.
 | Status | Meaning | Laravel should... |
 |---|---|---|
 | `200` with a real answer | Success | Display `answer`. |
-| `200` with the refusal string (`"I don't have information about that in the Magicard knowledge base."`) | The bot found nothing relevant — this is still `200`, not an error | Display it like a normal message (it's plain English), or optionally detect this exact string and show a custom "want to talk to a human?" CTA instead. The question was automatically logged server-side for the ops team to review, so no action needed from Laravel beyond the UI decision. |
+| `200` with the refusal string (`"I don't have information about that in the Magicard knowledge base."` — on Turqpay, `Magicard` is replaced by `X-Site-Name`) | The bot found nothing relevant — this is still `200`, not an error | Display it like a normal message (it's plain English), or optionally detect this exact string and show a custom "want to talk to a human?" CTA instead. The question was automatically logged server-side for the ops team to review, so no action needed from Laravel beyond the UI decision. |
 | `200` with the fallback error string (`"Sorry, I'm having trouble answering right now. Please try again shortly."`) | OpenAI or Qdrant failed upstream (timeout, outage, quota) | Display it like a normal message — it already reads as a graceful apology. Optionally detect this exact string to trigger a "retry" button, since it may be transient. |
-| `400` | Bad request (empty question, question too long, missing `X-User-Id`) | These indicate a bug in Laravel's request-building (should be prevented client-side per section 4), not something to show the end user verbatim — surface a generic "something went wrong" and log the `detail` for debugging. |
+| `400` | Bad request (empty question, question too long, missing `X-User-Id`, unknown `X-Site`) | These indicate a bug in Laravel's request-building (should be prevented client-side per section 4), not something to show the end user verbatim — surface a generic "something went wrong" and log the `detail` for debugging. |
 | `401` | Missing/wrong `X-Chat-Secret` | Configuration problem, not a user-facing case — should never happen in production if the secret is set correctly. Alert/log loudly if seen. |
 | `429` | Rate limited (applies to both `/chat` and `/chat/clear`) | Show `detail` directly to the user (it's already phrased for end users, e.g. "Too many requests. Try again in 5 seconds.") or, for an accurate countdown/disabled-button timer, use the structured `retry_after_seconds` integer field (also echoed in a `Retry-After` header) instead of parsing that sentence. |
 | Network error / timeout / non-JSON response | The chatbot service itself is unreachable | Not something the chatbot API can help with — this is Laravel needing its own HTTP client timeout + retry/circuit-breaker handling. Recommend a request timeout of ~15-20s (OpenAI generation can occasionally be slow) and treating a timeout the same as a `200` fallback-error case in the UI. |
@@ -253,6 +260,8 @@ if ($recentError = $this->getRecentError($userId)) {
 
 $response = Http::withHeaders([
     'X-User-Id' => (string) auth()->id() ?? session()->getId(),
+    'X-Site' => config('app.brand'),   // APP_BRAND: "magicard" | "turqpay"
+    'X-Site-Name' => brand('name'),    // "Magicard" | "Turqpay"
     'X-Chat-Secret' => config('services.magicard_chatbot.secret'),
 ])->timeout(20)->post(config('services.magicard_chatbot.url') . '/chat', $payload);
 
@@ -279,6 +288,8 @@ Handling the "Clear conversation" button (section 2):
 ```php
 $response = Http::withHeaders([
     'X-User-Id' => (string) auth()->id() ?? session()->getId(),
+    'X-Site' => config('app.brand'),   // APP_BRAND: "magicard" | "turqpay"
+    'X-Site-Name' => brand('name'),    // "Magicard" | "Turqpay"
     'X-Chat-Secret' => config('services.magicard_chatbot.secret'),
 ])->timeout(20)->post(config('services.magicard_chatbot.url') . '/chat/clear');
 

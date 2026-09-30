@@ -57,11 +57,13 @@ def _notify_threshold_reached(rotate_at: int) -> None:
         logger.exception("failed to send conversations threshold notification email")
 
 
-def log_turn(user_id: str, question: str, answer: str, rotate_at: int = 1000) -> None:
+def log_turn(user_key: tuple[str, str], question: str, answer: str, rotate_at: int = 1000) -> None:
+    site, user_id = user_key
     timestamp = datetime.now(ISRAEL_TZ).isoformat(timespec="seconds")
     entry = {
-        "id": _entry_id(timestamp, user_id, question),
+        "id": _entry_id(timestamp, f"{site}:{user_id}", question),
         "timestamp": timestamp,
+        "site": site,
         "user_id": user_id,
         "question": question,
         "answer": answer,

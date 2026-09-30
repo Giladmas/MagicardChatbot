@@ -13,7 +13,9 @@ import math
 import threading
 import time
 
-_clears: dict[str, list[float]] = {}
+from app.services.conversation_history import UserKey
+
+_clears: dict[UserKey, list[float]] = {}
 _lock = threading.Lock()
 
 
@@ -26,8 +28,8 @@ class ClearLimitResult:
         self.retry_after = retry_after
 
 
-def check_and_record_clear(user_id: str, limit: int, window_seconds: float) -> ClearLimitResult:
-    """Checks whether `user_id` may clear their conversation now, and if so,
+def check_and_record_clear(user_key: UserKey, limit: int, window_seconds: float) -> ClearLimitResult:
+    """Checks whether `user_key` may clear their conversation now, and if so,
     records the attempt immediately (so a burst of concurrent requests can't
     all slip through before any of them is recorded).
 
@@ -37,14 +39,14 @@ def check_and_record_clear(user_id: str, limit: int, window_seconds: float) -> C
     """
     now = time.monotonic()
     with _lock:
-        timestamps = [t for t in _clears.get(user_id, []) if now - t < window_seconds]
+        timestamps = [t for t in _clears.get(user_key, []) if now - t < window_seconds]
         if len(timestamps) >= limit:
             oldest = min(timestamps)
             retry_after = math.ceil(window_seconds - (now - oldest))
-            _clears[user_id] = timestamps
+            _clears[user_key] = timestamps
             return ClearLimitResult(False, 0, limit, window_seconds, retry_after)
         timestamps.append(now)
-        _clears[user_id] = timestamps
+        _clears[user_key] = timestamps
         return ClearLimitResult(True, limit - len(timestamps), limit, window_seconds, None)
 
 
